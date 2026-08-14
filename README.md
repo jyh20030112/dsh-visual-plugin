@@ -25,8 +25,8 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 - **Automatic description** — images sent in the composer are intercepted at `agent/pre-step` and rewritten to `[视觉描述] <description>` text before reaching the text-only model.
 - **Intent-aware prompts** — send an image *with a question* and the description is generated from your own words.
-- **`vision_describe` tool** — the model can answer follow-up questions about any previously attached image.
-- **Right-side panel** — configure endpoint / model / key, test the connection, watch recent descriptions with thumbnails (2s auto-refresh), read remaining balance.
+- **`vision_describe` tool** — the model can answer a later follow-up question when the automatic description lacks the requested detail.
+- **Right-side panel** — configure endpoint / model / key, test the connection, watch one latest description per image with thumbnails (2s auto-refresh), read remaining balance.
 - **Secrets stay secret** — the API key lives in the harness credentials seam (write-only, never echoed).
 
 ## Quick start

@@ -26,6 +26,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import { DEFAULT_API_KEY_ENV, NS, VisionBridgeConfig, type VisionBridgeConfigValue } from './config.ts'
 import { describeImage, queryBalance, testConnection } from './vision.ts'
 import { registerVisionAdapter } from './adapter.ts'
+import { upsertRecent, type RecentEntry } from './recent.ts'
 
 /** Vision-bridge plugin name. */
 export const name = 'vision-bridge'
@@ -39,13 +40,6 @@ export const name = 'vision-bridge'
  * web-surface trees.
  */
 export const inject = ['tools', 'settings', 'credentials', 'attachments', 'llm']
-
-/** One recent bridge activity row for the web panel's history feed. */
-interface RecentEntry {
-  time: number
-  attachmentId: string
-  description: string
-}
 
 /**
  * The host half: pre-step image interception, the describe tool, the panel's
@@ -168,8 +162,11 @@ export function apply(ctx: Context): void {
           ? { type: 'text' as const, text: `[视觉描述] ${described.text}\n[附件] ${described.attachmentId}` }
           : block),
       })
-      recent.unshift({ time: Date.now(), attachmentId: described.attachmentId, description: described.text })
-      if (recent.length > MAX_RECENT) recent.length = MAX_RECENT
+      upsertRecent(recent, {
+        time: Date.now(),
+        attachmentId: described.attachmentId,
+        description: described.text,
+      }, MAX_RECENT)
     }
     return { kind: 'enter', messages: rewritten }
   })
@@ -177,8 +174,9 @@ export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'vision_describe',
     description: 'Send one previously attached user image to the configured vision model and return its description. '
-      + 'Pass the attachmentId shown in the [视觉描述] block of the user message. The main model has no vision, '
-      + 'so this tool is how you answer follow-up questions about a specific image.',
+      + 'Use this only for a later user question that the existing [视觉描述] text cannot answer. '
+      + 'Do not call it in the same turn that introduced the image: that image has already been analyzed. '
+      + 'Pass the attachmentId shown in the [视觉描述] block.',
     parameters: {
       attachmentId: { type: 'string', required: true, description: 'The image attachment id from the [视觉描述] block.' },
       prompt: { type: 'string', description: 'Optional specific question about the image; defaults to a general description.' },
@@ -210,8 +208,11 @@ export function apply(ctx: Context): void {
         args.prompt,
         exec.signal,
       )
-      recent.unshift({ time: Date.now(), attachmentId: String(ref.attachmentId), description: result.description })
-      if (recent.length > MAX_RECENT) recent.length = MAX_RECENT
+      upsertRecent(recent, {
+        time: Date.now(),
+        attachmentId: String(ref.attachmentId),
+        description: result.description,
+      }, MAX_RECENT)
       return { description: result.description }
     },
   }))
@@ -224,7 +225,9 @@ export function apply(ctx: Context): void {
       order: 115,
       text: 'The user may attach images. Each attached image is described before it reaches you: '
         + 'you see "[视觉描述] <description>\\n[附件] <attachmentId>" (or "<image attachmentId=\\"…\\">" as a fallback). '
-        + 'To answer a follow-up question about a specific image, call the vision_describe tool with that attachmentId.',
+        + 'The [视觉描述] block is already the result of a completed vision call, so answer the current message directly from it. '
+        + 'Do not call vision_describe in the same turn that introduces the image. Only call it for a later user question '
+        + 'when the existing description lacks the requested detail.',
     })
   }
 

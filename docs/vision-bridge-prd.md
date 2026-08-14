@@ -22,10 +22,10 @@
 
 | 半 | 位置（编译产物，gitignored） | 内容 |
 |---|---|---|
-| Host | `packages/extensions/vision-bridge/lib/types/{index,vision,config,invariant}.js`（533 行） | `agent/pre-step` 图片拦截转写、`vision.describe` 工具、`/vision-bridge/{test,balance,recent}` 路由、settings/credentials 配置 |
-| Client | `packages/client/ui-vision-bridge/lib/types/client/{index,store,VisionBridgePanel,VisionBridgeToggle,VisionDescribeCard,locales}.js`（289 行） | `shell.overlay` 右侧浮动面板（配置表单+测试+余额+历史缩略图）、`sidebar.footer.action` 开关、`tool.call.toolview` keyed `vision.describe` 结果卡片、zh/en 文案 |
+| Host | `packages/extensions/vision-bridge/lib/types/{index,vision,config,invariant}.js`（533 行） | `agent/pre-step` 图片拦截转写、`vision_describe` 工具、`/vision-bridge/{test,balance,recent}` 路由、settings/credentials 配置 |
+| Client | `packages/client/ui-vision-bridge/lib/types/client/{index,store,VisionBridgePanel,VisionBridgeToggle,VisionDescribeCard,locales}.js`（289 行） | `shell.overlay` 右侧浮动面板（配置表单+测试+余额+历史缩略图）、`sidebar.footer.action` 开关、`tool.call.toolview` keyed `vision_describe` 结果卡片、zh/en 文案 |
 
-**与需求逐条对应**：url/model_name/api_key 配置表单 ✓；测试连接 ✓；发图自动调用（pre-step 拦截改写为 `[视觉描述]` 文本）✓；图片+结果右侧面板同步显示（recent 历史 + 缩略图）✓；追问工具 `vision.describe` ✓。
+**与需求逐条对应**：url/model_name/api_key 配置表单 ✓；测试连接 ✓；发图自动调用（pre-step 拦截改写为 `[视觉描述]` 文本）✓；图片+结果右侧面板同步显示（recent 历史 + 缩略图）✓；追问工具 `vision_describe` ✓。
 
 **参考实现缺失的部分**（即本项目要补的）：CSS Modules、两个包的 package.json/tsconfig/cordis.patch.yml、tsconfig.client.json 引用行、web-app browser plugin roster 接线、可发布 bundle 打包。且参考实现里 `ctx.layout.toggleVisionBridge()` 依赖对 layout 服务的进程内扩展——**第三方 bundle 应改用 store seat 的 actions（open/toggle/close），不碰 layout 服务**。
 
@@ -64,9 +64,9 @@
 ### 2.1 目标（G）
 
 - **G1（自动转述）**：用户发图片后，无视觉主模型能收到图片的文字描述并正常作答（`agent/pre-step` 自动拦截转写）。
-- **G2（可追问）**：模型通过 `vision.describe` 工具对指定图片回答后续问题；对话中渲染专用结果卡片。
+- **G2（可追问）**：模型通过 `vision_describe` 工具对指定图片回答后续问题；对话中渲染专用结果卡片。
 - **G3（配置面板）**：Web UI 右侧浮动面板配置视觉服务（url / model_name / api_key）、测试连接、显示结果与余额。
-- **G4（同步展示）**：用户发的图片与视觉结果在面板历史中同步显示（缩略图 + 描述 + 时间）。
+- **G4（同步展示）**：用户发的图片与视觉结果在面板历史中同步显示（缩略图 + 描述 + 时间）；同一附件只显示一张卡片，后续描述更新原卡片并置顶。
 - **G5（可发布）**：以 npm bundle 打包（`dsh.bundle.patch` + `dsh.client`），`dsh plugin --profile <name> add <pkg>` 可安装，满足 `docs/user/develop/basic/publish.md` 规范。
 
 ### 2.2 非目标（NG）
@@ -83,8 +83,8 @@
 ### 3.1 核心场景
 
 - **S1 配置**：点击侧栏底部"视觉桥接"开关 → 右侧浮动面板 → 填 `接口地址` / `模型名称` / `API Key`（密码框，仅填一次）→ `保存配置` → `测试连接`（显示延迟或错误码）。
-- **S2 发图自动描述**：输入栏粘贴/上传/拖拽图片 → 发送 → 主模型收到 `[视觉描述] <text>\n[附件] <id>` 文本并正常回复；面板"最近描述"出现该图片缩略图 + 描述。
-- **S3 追问**："图里的报错信息是什么？" → 模型调用 `vision.describe(attachmentId)` → 对话中渲染"视觉桥接"结果卡片；面板追加一条记录。
+- **S2 发图自动描述**：输入栏粘贴/上传/拖拽图片 → 发送 → 主模型收到 `[视觉描述] <text>\n[附件] <id>` 文本并正常回复；面板"最近描述"出现该图片唯一的缩略图 + 描述卡片；当前轮不重复调用工具。
+- **S3 追问**：后续轮次询问"图里的报错信息是什么？"且已有描述不足 → 模型调用 `vision_describe(attachmentId)` → 对话中渲染"视觉桥接"结果卡片；面板更新该附件的原记录并置顶。
 - **S4 未配置/失败**：未配置时发图 → 消息为 `[视觉描述失败] vision model is not configured (set it in the right-side panel)`，模型不崩溃；API 错误按错误码显示在面板。
 
 ---
@@ -103,18 +103,18 @@
 - 消息含 `image` 块时触发：
   1. `resolvedFacts()`：settings（url/model/apiKeyEnv）+ credentials 解析，缺失 → 替换为失败文案。
   2. `attachments.readImage(ref, signal)` → base64 → `describeImage(url, apiKey, model, data, mediaType, prompt?, signal)`。
-  3. 图片块改写为文本块 `[视觉描述] <text>\n[附件] <attachmentId>`；记录 `attachmentId → ref` 映射（供 `vision.describe`）。
-  4. 追加 `recent` 记录（`{time, attachmentId, description}`，上限 20）。
+  3. 图片块改写为文本块 `[视觉描述] <text>\n[附件] <attachmentId>`；记录 `attachmentId → ref` 映射（供 `vision_describe`）。
+  4. 按 `attachmentId` 写入或替换 `recent` 记录（`{time, attachmentId, description}`，新记录置顶，上限 20）。
 - 失败降级（文案进 i18n）：
   - 附件服务不可用 → `[视觉描述失败] the attachment service is unavailable`
   - 未配置 → `[视觉描述失败] vision model is not configured (set it in the right-side panel)`
   - API 错误 → `[视觉描述失败] <code>: <message>`
 
-### FR2 Host：`vision.describe` 工具
+### FR2 Host：`vision_describe` 工具
 
 - 参数：`attachmentId`（string, required）、`prompt`（string, optional，默认 `Describe this image in detail, including any visible text.`）。
-- 行为：按 id 解析 ref → 读图 → 调视觉 API（60s 超时，`exec.signal` 联动取消）→ 返回 `{description}`；`output.render` 输出文本；追加 `recent`。
-- 未知 id：`vision.describe: unknown attachment <id>`（错误可见）。
+- 行为：仅在后续轮次且已有描述不足时，按 id 解析 ref → 读图 → 调视觉 API（60s 超时，`exec.signal` 联动取消）→ 返回 `{description}`；`output.render` 输出文本；按附件 id 更新 `recent` 原记录并置顶。
+- 未知 id：`vision_describe: unknown attachment <id>`（错误可见）。
 
 ### FR3 Host：配置模型（settings + credentials 分工）
 
@@ -141,7 +141,7 @@
 2. **额度区**：`/balance` 结果（supported→逐行 currency/available/total；unsupported/unavailable→提示）。
 3. **历史区**：`/recent` 条目列表（缩略图 + 描述 + `附件 {id}`）；缩略图按需 `api.sessions.attachment` 加载；空态提示。
 - 打开时加载配置与历史；开关按钮在 `sidebar.footer.action`（id `vision-bridge-toggle`，`aria-pressed` 反映 open 态）。
-- **对话内结果卡片**：`tool.call.toolview` keyed `vision.describe` 渲染 `VisionDescribeCard`（settled 态显示描述，running 走通用卡片）。
+- **对话内结果卡片**：`tool.call.toolview` keyed `vision_describe` 渲染 `VisionDescribeCard`（settled 态显示描述，running 走通用卡片）。
 - i18n：zh/en 字典（参考实现 locales.js 全量文案可直接采用，见附录）。
 - **不依赖 layout 服务扩展**：开合走 store seat actions（参考实现同款 defineStore：`{open}` + toggle/close）。
 
@@ -154,7 +154,7 @@
 ### FR7 Client：历史同步显示
 
 - 轮询 `GET /vision-bridge/recent`（打开面板时加载；刷新按钮手动；间隔轮询为可选增强）。首版不做事件推送（第三方 bundle 无法改 remote-events 白名单）。
-- 每条：缩略图（`api.sessions.attachment` → data URL）、描述文本、附件 id；新记录置顶。
+- 每个附件最多一条：缩略图（`api.sessions.attachment` → data URL）、最新描述文本、附件 id；新增或更新记录置顶。
 
 ### FR8 端到端触发链路
 
@@ -167,7 +167,7 @@
       └─ 正常 → readImage → 视觉 API → 改写为 [视觉描述] 文本块 + recent 记录
   → 主模型基于文本描述正常作答（包装适配器 stream() 兜底改写任何漏网 ImageBlock）
   → 面板轮询 /recent → 右侧浮动面板显示缩略图+描述
-追问 → 模型调用 vision.describe(attachmentId) → 对话结果卡片 + 面板新记录
+后续追问且已有描述不足 → 模型调用 vision_describe(attachmentId) → 对话结果卡片 + 面板原记录更新并置顶
 ```
 
 ### FR9 错误与状态
@@ -199,7 +199,7 @@ vision-bridge/
 │                          #   （一行即可：client-modules 扫描该 loader 行 → 包声明 dsh.client → 服务 lib/client.js）
 ├── tsconfig.json / tsdown.config.ts   # host 面 → lib/index.js；client 面 → lib/client.js（closure-factory，tsdown.client.ts 副本）
 ├── src/
-│   ├── index.ts           # host 插件：pre-step 拦截 + vision.describe + webServer 路由（按编译产物重建）
+│   ├── index.ts           # host 插件：pre-step 拦截 + vision_describe + webServer 路由（按编译产物重建）
 │   ├── vision.ts          # OpenAI 兼容视觉调用（按编译产物重建）
 │   ├── config.ts          # settings 命名空间 + schema（按编译产物重建）
 │   ├── adapter.ts         # 包装适配器：inputModalities 声明 + stream() 兜底改写（新，FR0）
@@ -233,7 +233,7 @@ vision-bridge/
 | ADR-1 | 面板槽位 | `shell.overlay`（list，叠加，id `vision-bridge-panel`，order 100） | 参考实现同款；`details` 被 ui-conversation 占用会挤掉工具详情 |
 | ADR-2 | 面板数据获取 | 轮询 `/recent` + 手动刷新 | 第三方 bundle 无法改 `remote-events` 白名单；recent 为纯展示数据 |
 | ADR-3 | api_key 存储 | credentials 引用（env `VISION_API_KEY`），settings 只存 url/model/apiKeyEnv | 安全约束；参考实现同款 |
-| ADR-4 | 触发方式 | 自动拦截（pre-step）+ `vision.describe` 工具并存 | 用户要求"发图自动调用"；工具用于追问 |
+| ADR-4 | 触发方式 | 自动拦截（pre-step）+ `vision_describe` 工具并存 | 用户要求"发图自动调用"；工具仅用于后续轮次中已有描述不足的追问，同轮禁止重复调用 |
 | ADR-5 | 面板开合 | store seat actions（defineStore），不扩展 layout 服务 | 第三方 bundle 不得改仓库内服务 |
 | ADR-6 | 交付形态 | 单包双端（exports "." + "./client" + dsh.client），patch 插一行 | 与 ui-cordis 同构；client-modules 扫描 loader 行即可发现 |
 | ADR-7 | 主模型未来支持视觉 | 面板可加"启用/禁用"（P1 增强） | 防功能冗余 |
@@ -245,8 +245,8 @@ vision-bridge/
 
 1. **AC1**：`dsh plugin --profile <name> add <包>` 安装成功；`dsh --profile <name> --dump-config` 可见补丁层；**重启后** Web 启动无报错，侧栏出现"视觉桥接"开关，点击出现右侧浮动面板。
 2. **AC2**：面板填写 url/model/api_key → 测试连接 → 返回 ok + latency（真实或本地 mock 端点）。
-3. **AC3**：配置成功后发一张图片 → 上传不被网关拒绝（无 `MODEL_DOES_NOT_SUPPORT_IMAGES`）→ 模型回复体现图片信息（自动描述生效）；面板"最近描述"出现缩略图+描述。
-4. **AC4**：追问"图中 XX 是什么" → 模型调用 `vision.describe` → 对话出现"视觉桥接"结果卡片；面板追加新记录。
+3. **AC3**：配置成功后发一张图片 → 上传不被网关拒绝（无 `MODEL_DOES_NOT_SUPPORT_IMAGES`）→ 模型回复体现图片信息（自动描述生效）；当前轮不重复调用工具，面板"最近描述"仅出现该附件的一张缩略图+描述卡片。
+4. **AC4**：后续追问"图中 XX 是什么"且已有描述不足 → 模型调用 `vision_describe` → 对话出现"视觉桥接"结果卡片；面板更新该附件原记录且不产生重复卡片。
 5. **AC5**：未配置时发图 → 消息为 `[视觉描述失败]` 占位，模型正常继续，不崩溃。
 6. **AC6**：错误映射正确（401→AUTH、429→RATE_LIMIT、超时→TIMEOUT 等），面板展示错误码。
 7. **AC7**：`npm pack` 产物可被 `dsh plugin add ./x.tgz` 安装；浏览器 Network 出现 `/plugins/<scope>/<name>/client.js` 请求。
@@ -260,7 +260,7 @@ vision-bridge/
 |---|---|---|---|
 | R1 | 第三方 client bundle 运行时加载 | 低（已缓解） | `client-modules` 按 baseUrl require 解析 loader 条目，`@fixture/*` 测试佐证；仍需端到端实测 |
 | R2 | client bundle 构建协议未发布 | 中 | 自备 `tsdown.client.ts` 协议副本；react 保持 external；CSS Modules 由 lightningcss 注入 |
-| R3 | `vision.describe` 依赖进程内 `refs` Map | 中 | 附件 id 会话内有效；重启后追问需重新发图；可接受（首版），P1 可考虑持久化 |
+| R3 | `vision_describe` 依赖进程内 `refs` Map | 中 | 附件 id 会话内有效；重启后追问需重新发图；可接受（首版），P1 可考虑持久化 |
 | R4 | 大图/多图性能 | 中 | 依赖 `readImage` 体积限制；多图逐图描述；首版接受 |
 | R5 | git 安装缺预构建产物 | 中 | 用 `prepare` 脚本或发布 tarball/npm（publish.md 结论）；`MissingClientBundleError` 提示需重启 |
 | R6 | 主模型未来支持视觉 | 低 | 面板"启用/禁用"开关（P1） |
@@ -269,7 +269,7 @@ vision-bridge/
 **开放问题（P1 再议，不阻塞首版）**：
 - OQ-1：`/recent` 是否按会话隔离（当前 host 内存、全局共享）。
 - OQ-2：面板是否加自动轮询间隔（当前打开时加载 + 手动刷新）。
-- OQ-3：是否把 `vision.describe` 卡片扩展到 pre-step 自动描述（当前自动描述只进面板历史，不进对话流——参考实现即此行为）。
+- OQ-3：是否把 `vision_describe` 卡片扩展到 pre-step 自动描述（当前自动描述只进面板历史，不进对话流——参考实现即此行为）。
 
 ---
 
