@@ -154,11 +154,14 @@ export function VisionBridgePanel(props: VisionBridgePanelProps): JSX.Element | 
     }
   }, [api, sessionId])
 
-  // Refresh config/history on open.
+  // Refresh config/history on open, then poll the recent feed every 2s so a
+  // freshly described image appears in the panel without a manual refresh.
   useEffect(() => {
     if (!open) return
     void loadConfig()
     void refresh()
+    const timer = setInterval(() => { void refresh() }, 2000)
+    return () => clearInterval(timer)
   }, [open, loadConfig, refresh])
 
   if (!open) return null
