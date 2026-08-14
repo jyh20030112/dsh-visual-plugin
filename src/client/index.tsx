@@ -45,11 +45,16 @@ export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionHandle | undefined
   const api: IApiClient | undefined = connection?.api
 
+  // ONE shared store handle: the toggle and the panel must observe the same
+  // open/closed state. Passing the factory would give each entry its own
+  // exclusive instance, so the toggle would flip a copy the panel never sees.
+  const visionBridgeStore = createVisionBridgeStore()
+
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
     name: 'sidebar.footer.action',
     id: 'vision-bridge-toggle',
     locale: NS,
-    store: createVisionBridgeStore,
+    store: visionBridgeStore,
     inject: () => ({}),
   }, VisionBridgeToggle))
 
@@ -58,7 +63,7 @@ export function apply(ctx: ClientContext): void {
     id: 'vision-bridge-panel',
     order: 100,
     locale: NS,
-    store: createVisionBridgeStore,
+    store: visionBridgeStore,
     inject: (): VisionBridgePanelInjected => ({ api }),
   }, VisionBridgePanel))
 
