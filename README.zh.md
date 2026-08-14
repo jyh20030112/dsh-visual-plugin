@@ -34,6 +34,20 @@
 - **右侧面板** —— 配置接口 / 模型 / Key、测试连接、查看最近描述（缩略图 + 2 秒自动刷新）、剩余额度。
 - **密钥不落地** —— API Key 经 harness credentials 缝存储（只写不回显）。
 
+## 工作原理
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/jyh20030112/dsh-visual-plugin/main/assets/vision-bridge-flow.svg" width="720" alt="dsh web 中视觉桥接的动画演示：用户发图，视觉桥自动描述，主模型基于描述作答">
+</p>
+
+```
+输入栏或工具结果产生图片 → 包装适配器递归发现 → 聊天记录保留原始图片
+  → adapter stream → readImage → 视觉 API → 仅在模型私有请求中改写为 "[视觉描述] …"
+  → 纯文本模型作答 → /vision-bridge/recent → 面板缩略图 + 描述（2s 轮询）
+```
+
+未配置或调用失败时降级为 `[视觉描述失败] <原因>` 占位文本，对话不会中断。
+
 ## 快速开始
 
 ```sh
@@ -62,20 +76,6 @@ dsh plugin --profile web remove dsh-visual-plugin
 ```
 
 重启 `dsh web`。该命令会在 profile 内转发执行 `pnpm remove`，bundle 层列表会自动同步移除该插件。
-
-## 工作原理
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/jyh20030112/dsh-visual-plugin/main/assets/vision-bridge-flow.svg" width="720" alt="dsh web 中视觉桥接的动画演示：用户发图，视觉桥自动描述，主模型基于描述作答">
-</p>
-
-```
-输入栏或工具结果产生图片 → 包装适配器递归发现 → 聊天记录保留原始图片
-  → adapter stream → readImage → 视觉 API → 仅在模型私有请求中改写为 "[视觉描述] …"
-  → 纯文本模型作答 → /vision-bridge/recent → 面板缩略图 + 描述（2s 轮询）
-```
-
-未配置或调用失败时降级为 `[视觉描述失败] <原因>` 占位文本，对话不会中断。
 
 ## 项目结构
 

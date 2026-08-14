@@ -34,6 +34,20 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 - **Right-side panel** — configure endpoint / model / key, test the connection, watch one latest description per image with thumbnails (2s auto-refresh), read remaining balance.
 - **Secrets stay secret** — the API key lives in the harness credentials seam (write-only, never echoed).
 
+## How it works
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/jyh20030112/dsh-visual-plugin/main/assets/vision-bridge-flow.svg" width="720" alt="Animated demo of the vision bridge in dsh web: the user sends an image, the vision bridge auto-describes it, and the main model answers from the description">
+</p>
+
+```
+image in composer or tool result → wrapper finds it at any content depth → visible message keeps the image
+  → adapter stream → readImage → vision API → "[视觉描述] …" in the private model request only
+  → text-only model answers → /vision-bridge/recent → panel thumbnail + description (2s poll)
+```
+
+Unconfigured or failed calls degrade to a `[视觉描述失败] <reason>` placeholder, so the conversation never breaks.
+
 ## Quick start
 
 ```sh
@@ -63,20 +77,6 @@ dsh plugin --profile web remove dsh-visual-plugin
 ```
 
 Restart `dsh web`. The command forwards to `pnpm remove` inside the profile, and the bundle layer list reconciles to drop the plugin automatically.
-
-## How it works
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/jyh20030112/dsh-visual-plugin/main/assets/vision-bridge-flow.svg" width="720" alt="Animated demo of the vision bridge in dsh web: the user sends an image, the vision bridge auto-describes it, and the main model answers from the description">
-</p>
-
-```
-image in composer or tool result → wrapper finds it at any content depth → visible message keeps the image
-  → adapter stream → readImage → vision API → "[视觉描述] …" in the private model request only
-  → text-only model answers → /vision-bridge/recent → panel thumbnail + description (2s poll)
-```
-
-Unconfigured or failed calls degrade to a `[视觉描述失败] <reason>` placeholder, so the conversation never breaks.
 
 ## Project layout
 
