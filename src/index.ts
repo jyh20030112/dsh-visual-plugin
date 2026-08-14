@@ -17,7 +17,6 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ImageBlock, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-credentials'
@@ -31,8 +30,15 @@ import { registerVisionAdapter } from './adapter.ts'
 /** Vision-bridge plugin name. */
 export const name = 'vision-bridge'
 
-/** Required services: the tool registry only; every other seam is optional. */
-export const inject = ['tools']
+/**
+ * Required services: the core seams the bridge cannot function without —
+ * the tool registry, the settings/credentials seams for the vision endpoint
+ * facts, the attachment store for image bytes, and the llm registry for the
+ * wrapper adapter. All ship in the base bundle, so any tree that mounts this
+ * plugin provides them; webServer stays optional because it exists only in
+ * web-surface trees.
+ */
+export const inject = ['tools', 'settings', 'credentials', 'attachments', 'llm']
 
 /** One recent bridge activity row for the web panel's history feed. */
 interface RecentEntry {
@@ -59,26 +65,22 @@ export function apply(ctx: Context): void {
   const recent: RecentEntry[] = []
   const MAX_RECENT = 20
 
-  const settings = ctx.get('settings')
-  const credentials = ctx.get('credentials')
-  const attachments = ctx.get('attachments')
+  const settings = ctx.get('settings')!
+  const credentials = ctx.get('credentials')!
+  const attachments = ctx.get('attachments')!
   const webServer = ctx.get('webServer')
 
-  let scope: SettingsScope<VisionBridgeConfigValue> | undefined
-  if (settings !== undefined) {
-    scope = settings.register(NS, VisionBridgeConfig, {
-      base: { url: '', model: '', apiKeyEnv: DEFAULT_API_KEY_ENV },
-    })
-  }
+  const scope = settings.register(NS, VisionBridgeConfig, {
+    base: { url: '', model: '', apiKeyEnv: DEFAULT_API_KEY_ENV },
+  })
 
   /** Resolve the configured endpoint facts, or undefined when unconfigured. */
   async function resolvedFacts(): Promise<{ url: string; model: string; apiKey: string } | undefined> {
-    const value = scope?.get()
+    const value = scope.get()
     const url = value?.url ?? ''
     const model = value?.model ?? ''
     if (url.length === 0 || model.length === 0) return undefined
     const apiKeyEnv = value?.apiKeyEnv ?? DEFAULT_API_KEY_ENV
-    if (credentials === undefined) return undefined
     const resolved = await credentials.resolve(credentialRef(apiKeyEnv))
     if (resolved === undefined) return undefined
     return { url, model, apiKey: resolved.value }
@@ -99,7 +101,6 @@ export function apply(ctx: Context): void {
     if (imageBlock === undefined) return undefined
     const ref = imageBlock.attachment
     refs.set(String(ref.attachmentId), ref)
-    if (attachments === undefined) return undefined
     const stored = await attachments.readImage(ref, signal)
     const result = await describeImage(
       facts.url,
@@ -127,9 +128,6 @@ export function apply(ctx: Context): void {
   ctx.on('agent/pre-step', async ({ messages, signal }, next) => {
     const hasImage = messages.some(message => message.content.some(block => block.type === 'image'))
     if (!hasImage) return next()
-    if (attachments === undefined) {
-      return replaceWithFailure(messages, 'the attachment service is unavailable')
-    }
     const facts = await resolvedFacts()
     if (facts === undefined) {
       return replaceWithFailure(messages, 'vision model is not configured (set it in the right-side panel)')
@@ -179,7 +177,6 @@ export function apply(ctx: Context): void {
       if (ref === undefined) throw new Error(`vision_describe: unknown attachment ${args.attachmentId}`)
       const facts = await resolvedFacts()
       if (facts === undefined) throw new Error('vision_describe: vision model is not configured')
-      if (attachments === undefined) throw new Error('vision_describe: attachment service is unavailable')
       const stored = await attachments.readImage(ref, exec.signal)
       const result = await describeImage(
         facts.url,
@@ -209,15 +206,8 @@ export function apply(ctx: Context): void {
   }
 
   // FR0: admit image uploads by exposing the deepseek-vision provider route.
-  // The llm seam may appear after our apply (optional service), so wait for it.
-  const llm = ctx.get('llm')
-  if (llm !== undefined) {
-    registerVisionAdapter(ctx)
-  } else {
-    ctx.inject(['llm'], (scoped) => {
-      registerVisionAdapter(scoped as Context)
-    })
-  }
+  // The llm registry is a hard inject, so the adapter is always registered.
+  registerVisionAdapter(ctx)
 
   // The panel's HTTP routes. webServer may appear after our apply (it is a
   // web-surface service, absent from headless/base trees), so register through

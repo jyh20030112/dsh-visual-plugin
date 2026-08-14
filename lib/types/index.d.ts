@@ -11,7 +11,14 @@
 import type { Context } from '@deepseek-ai/cordis';
 /** Vision-bridge plugin name. */
 export declare const name = "vision-bridge";
-/** Required services: the tool registry only; every other seam is optional. */
+/**
+ * Required services: the core seams the bridge cannot function without —
+ * the tool registry, the settings/credentials seams for the vision endpoint
+ * facts, the attachment store for image bytes, and the llm registry for the
+ * wrapper adapter. All ship in the base bundle, so any tree that mounts this
+ * plugin provides them; webServer stays optional because it exists only in
+ * web-surface trees.
+ */
 export declare const inject: string[];
 /**
  * The host half: pre-step image interception, the describe tool, the panel's
