@@ -16,6 +16,9 @@ export declare const zh: {
     'status.notConfigured': string;
     'status.configured': string;
     'status.testing': string;
+    'status.describing': string;
+    'status.describeFail': string;
+    'status.interrupted': string;
     'status.testOk': string;
     'status.testFail': string;
     'status.keyConfigured': string;

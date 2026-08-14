@@ -66,7 +66,7 @@
 - **G1（自动转述）**：用户发图片后，可见会话保留原图，无视觉主模型通过 adapter 私有请求副本收到文字描述并正常作答。
 - **G2（可追问）**：模型通过 `vision_describe` 工具对指定图片回答后续问题；对话中渲染专用结果卡片。
 - **G3（配置面板）**：Web UI 右侧浮动面板配置视觉服务（url / model_name / api_key）、测试连接、显示结果与余额。
-- **G4（同步展示）**：用户发的图片与视觉结果在面板历史中同步显示（缩略图 + 描述 + 时间）；同一附件只显示一张卡片，后续描述更新原卡片并置顶。
+- **G4（同步展示）**：自动解析在原图片消息下方立即显示运行态，并原位更新为成功或失败；图片与视觉结果同时在面板历史中同步显示。同一逻辑解析只显示一张对话卡片，同一附件只保留一张面板历史卡片。
 - **G5（可发布）**：以 npm bundle 打包（`dsh.bundle.patch` + `dsh.client`），`dsh plugin --profile <name> add <pkg>` 可安装，满足 `docs/user/develop/basic/publish.md` 规范。
 
 ### 2.2 非目标（NG）
@@ -83,7 +83,7 @@
 ### 3.1 核心场景
 
 - **S1 配置**：点击侧栏底部"视觉桥接"开关 → 右侧浮动面板 → 填 `接口地址` / `模型名称` / `API Key`（密码框，仅填一次）→ `保存配置` → `测试连接`（显示延迟或错误码）。
-- **S2 图片自动描述**：输入栏粘贴/上传/拖拽图片，或 `read_image` 等工具结果返回嵌套图片 → 聊天记录仍显示原始内容；adapter 递归改写私有请求中的图片，主模型收到 `[视觉描述] <text>\n[附件] <id>` 并正常回复；面板"最近描述"出现唯一卡片；当前轮工具调用复用自动描述缓存。
+- **S2 图片自动描述**：输入栏粘贴/上传/拖拽图片，或 `read_image` 等工具结果返回嵌套图片 → 聊天记录仍显示原始内容；adapter 递归改写私有请求中的图片，主模型收到 `[视觉描述] <text>\n[附件] <id>` 并正常回复；原图片消息下方立即出现运行态卡片并原位结算；面板“最近描述”出现唯一卡片；当前轮工具调用复用自动描述缓存。
 - **S3 追问**：后续轮次询问"图里的报错信息是什么？"且已有描述不足 → 模型调用 `vision_describe(attachmentId)` → 对话中渲染"视觉桥接"结果卡片；面板更新该附件的原记录并置顶。
 - **S4 未配置/失败**：未配置时发图 → 可见消息仍保留原图，模型私有请求降级为 `[视觉描述失败] vision model is not configured (set it in the right-side panel)`，模型不崩溃；API 错误按错误码显示在面板。
 
@@ -104,7 +104,7 @@
   1. `resolvedFacts()`：settings（url/model/apiKeyEnv）+ credentials 解析，缺失 → 仅在模型请求副本中替换为失败文案。
   2. `attachments.readImage(ref, signal)` → base64 → `describeImage(url, apiKey, model, data, mediaType, prompt?, signal)`。
   3. 模型请求副本的图片块改写为文本块 `[视觉描述] <text>\n[附件] <attachmentId>`；原始消息保留图片；记录 `attachmentId → ref` 映射（供 `vision_describe`）。
-  4. 按 `attachmentId` 缓存首次成功的自动描述，跨 model step 复用；写入或替换 `recent` 记录（新记录置顶，上限 20）。
+  4. 按 `sessionId + attachmentId` 缓存首次成功的自动描述，跨 model step 复用；一次逻辑解析只发布一组 start/success/failure 生命周期；写入或替换 `recent` 记录（新记录置顶，上限 20）。
   5. 若视觉接口只返回“图片中没有文字”等低信息回答，以更强的意图优先提示词重试一次；不得无限重试。
 - 失败降级（文案进 i18n）：
   - 附件服务不可用 → `[视觉描述失败] the attachment service is unavailable`
@@ -142,7 +142,7 @@
 2. **额度区**：`/balance` 结果（supported→逐行 currency/available/total；unsupported/unavailable→提示）。
 3. **历史区**：`/recent` 条目列表（缩略图 + 描述 + `附件 {id}`）；缩略图按需 `api.sessions.attachment` 加载；空态提示。
 - 打开时加载配置与历史；开关按钮在 `sidebar.footer.action`（id `vision-bridge-toggle`，`aria-pressed` 反映 open 态）。
-- **对话内结果卡片**：`tool.call.toolview` keyed `vision_describe` 渲染 `VisionDescribeCard`（settled 态显示描述，running 走通用卡片）。
+- **对话内结果卡片**：`ConversationNodeDefinition` 在含图片的 `user/message` 或嵌套图片 `tool/result` 到达时创建 `conversation.chat.node`，以 `messageId` 精确关联 Host activity，并在原位置展示 running/completed/failed；`tool.call.toolview` keyed `vision_describe` 复用同一视觉组件。展示状态不进入模型历史。
 - i18n：zh/en 字典（参考实现 locales.js 全量文案可直接采用，见附录）。
 - **不依赖 layout 服务扩展**：开合走 store seat actions（参考实现同款 defineStore：`{open}` + toggle/close）。
 
@@ -182,7 +182,7 @@
 ## 5. 非功能需求（NFR）
 
 - **安全**：api_key 仅存 credentials（write-only）；不出现在 settings 明文、日志、模型上下文、前端读回；Bearer 请求不跟随重定向；错误信息脱敏。
-- **性能**：单次描述 60s 超时；低信息回答最多重试一次；同附件自动描述跨 step 缓存；`recent` 上限 20；面板按需加载缩略图。
+- **性能**：单次描述 60s 超时；低信息回答最多重试一次；同会话同附件自动描述跨 step 缓存；内部 HTTP 重试不新增卡片；`recent` 上限 20；面板按需加载缩略图。
 - **兼容**：OpenAI 兼容 `/chat/completions`；支持多图（逐图描述，每图一次调用）；gif/png/jpeg/webp（与输入栏 MIME 校验一致）。
 - **可发布性**：满足 bundle 规范（`dsh.bundle.patch` → `cordis.patch.yml`）；client 半 `dsh.client.platform:'web'` + `exports["./client"]` + 预构建 `lib/client.js`；`files` 含 `lib/index.js`、`lib/client.js`、`cordis.patch.yml`、`lib/types/**/*.d.ts`；**自备 tsdown.client.ts 协议副本**；react 保持 external。
 - **测试**：host 单测（模型私有副本递归改写且原消息不变、嵌套工具结果图片可通过 DeepSeek 文本序列化、缓存、低信息重试、同轮工具保护、settings/credentials 解析）、client 组件测试（表单/历史/卡片）、e2e（安装 → 发图 → 可见消息保留原图 → 面板显示 → 追问）。
@@ -250,7 +250,7 @@ vision-bridge/
 
 1. **AC1**：`dsh plugin --profile <name> add <包>` 安装成功；`dsh --profile <name> --dump-config` 可见补丁层；**重启后** Web 启动无报错，侧栏出现"视觉桥接"开关，点击出现右侧浮动面板。
 2. **AC2**：面板填写 url/model/api_key → 测试连接 → 返回 ok + latency（真实或本地 mock 端点）。
-3. **AC3**：配置成功后发一张图片 → 聊天气泡保留原始图片和用户原话，不出现 `[视觉描述]`/附件 ID → 模型回复体现图片信息；同轮工具复用缓存，面板仅出现一张描述卡片。
+3. **AC3**：配置成功后发一张图片 → 聊天气泡保留原始图片和用户原话，不出现 `[视觉描述]`/附件 ID → 自动视觉卡片立即显示运行态并最终在本回合只保留一张成功或失败卡片 → 模型回复体现图片信息；同轮工具复用缓存，面板仅出现一张描述卡片。
 4. **AC4**：后续追问"图中 XX 是什么"且已有描述不足 → 模型调用 `vision_describe` → 对话出现"视觉桥接"结果卡片；面板更新该附件原记录且不产生重复卡片。
 5. **AC5**：未配置时发图 → 可见消息仍为原图；仅模型私有副本出现 `[视觉描述失败]` 占位，模型正常继续，不崩溃。
 6. **AC6**：错误映射正确（401→AUTH、429→RATE_LIMIT、超时→TIMEOUT 等），面板展示错误码。
@@ -274,7 +274,7 @@ vision-bridge/
 **开放问题（P1 再议，不阻塞首版）**：
 - OQ-1：`/recent` 是否按会话隔离（当前 host 内存、全局共享）。
 - OQ-2：面板是否加自动轮询间隔（当前打开时加载 + 手动刷新）。
-- OQ-3：是否为 adapter 自动描述增加独立的非消息型状态指示（当前只进面板历史，不污染对话流）。
+- OQ-3（已决）：adapter 自动描述使用模型隐藏的进程内 activity 投影；通过图片消息的 `messageId` 派生 Chat 节点并原位更新，不写入模型消息或伪造工具事件。
 
 ---
 

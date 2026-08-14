@@ -8,6 +8,26 @@
   border-radius: 6px;
 }
 
+.running {
+  border-left-color: var(--color-warning, #d8a300);
+}
+
+.failed,
+.interrupted {
+  border-left-color: var(--color-danger, #e05252);
+}
+
+.running .label::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: vision-pulse 1.1s ease-in-out infinite;
+}
+
 .label {
   font-size: 11px;
   font-weight: 600;
@@ -21,4 +41,9 @@
   font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+@keyframes vision-pulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
 }

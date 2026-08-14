@@ -16,6 +16,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-agent'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-attachment'
@@ -28,6 +29,7 @@ import { upsertRecent, type RecentEntry } from './recent.ts'
 import { describeWithLowInformationRetry } from './description-policy.ts'
 import { ModelImageBridge } from './model-messages.ts'
 import { isSameTurnAttachmentToolCall } from './turn-guard.ts'
+import { VisionActivityStore, type VisionActivity } from './activity.ts'
 
 /** Vision-bridge plugin name. */
 export const name = 'vision-bridge'
@@ -39,7 +41,7 @@ export const name = 'vision-bridge'
  * wrapper adapter, and systemPrompt for model guidance. All ship in the base
  * bundle; webServer stays optional because it exists only in web-surface trees.
  */
-export const inject = ['tools', 'settings', 'credentials', 'attachments', 'llm', 'systemPrompt']
+export const inject = ['tools', 'settings', 'credentials', 'attachments', 'llm', 'systemPrompt', 'agents']
 
 /**
  * The host half: model-bound image description, the describe tool, the panel's
@@ -57,11 +59,35 @@ export function apply(ctx: Context): void {
   // session logs; the entries are presentation-only and never model-visible.
   const recent: RecentEntry[] = []
   const MAX_RECENT = 20
+  const activities = new VisionActivityStore()
 
   const settings = ctx.get('settings')!
   const credentials = ctx.get('credentials')!
   const attachments = ctx.get('attachments')!
   const webServer = ctx.get('webServer')
+
+  /** Locate the currently open turn for one adapter request. */
+  function activeTurn(sessionId: string): number | undefined {
+    const events = ctx.agents.get(SessionId(sessionId))?.session.events
+    if (events === undefined) return undefined
+    const ended = new Set<number>()
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index]
+      if (event?.type === 'turn/end') ended.add(event.data.turn)
+      if (event?.type === 'turn/start' && !ended.has(event.data.turn)) return event.data.turn
+    }
+    return undefined
+  }
+
+  /** Whether an activity's owning turn has reached its durable end boundary. */
+  function withTurnState(entry: VisionActivity): VisionActivity & { turnClosed: boolean } {
+    if (entry.turn === undefined) return { ...entry, turnClosed: entry.status !== 'running' }
+    const events = ctx.agents.get(SessionId(entry.sessionId))?.session.events
+    const turnClosed = events === undefined
+      ? entry.status !== 'running'
+      : events.some(event => event.type === 'turn/end' && event.data.turn === entry.turn)
+    return { ...entry, turnClosed }
+  }
 
   const scope = settings.register(NS, VisionBridgeConfig, {
     base: { url: '', model: '', apiKeyEnv: DEFAULT_API_KEY_ENV },
@@ -107,8 +133,19 @@ export function apply(ctx: Context): void {
       )
       return result.description
     },
+    onStart(entry) {
+      activities.start(entry, entry.sessionId === undefined ? undefined : activeTurn(entry.sessionId))
+    },
     onDescription(entry) {
-      upsertRecent(recent, { time: Date.now(), ...entry }, MAX_RECENT)
+      upsertRecent(recent, {
+        time: Date.now(),
+        attachmentId: entry.attachmentId,
+        description: entry.description,
+      }, MAX_RECENT)
+      activities.complete(entry)
+    },
+    onFailure(entry) {
+      activities.fail(entry)
     },
     failureText(error) {
       return error instanceof Error ? error.message : String(error)
@@ -141,7 +178,10 @@ export function apply(ctx: Context): void {
       const attachmentId = String(args.attachmentId)
       const ref = refs.get(attachmentId)
       if (ref === undefined) throw new Error(`vision_describe: unknown attachment ${args.attachmentId}`)
-      const cached = modelImages.cachedDescription(attachmentId)
+      const cached = modelImages.cachedDescription(
+        attachmentId,
+        exec.agent === undefined ? undefined : String(exec.agent.session.id),
+      )
       if (cached !== undefined && exec.agent !== undefined
         && isSameTurnAttachmentToolCall(exec.agent.session.events, attachmentId, String(exec.callId))) {
         return { description: cached }
@@ -180,7 +220,7 @@ export function apply(ctx: Context): void {
 
   // FR0: admit image uploads by exposing the deepseek-vision provider route.
   // The llm registry is a hard inject, so the adapter is always registered.
-  registerVisionAdapter(ctx, (messages, signal) => modelImages.rewrite(messages, signal))
+  registerVisionAdapter(ctx, (messages, context) => modelImages.rewrite(messages, context))
 
   // The panel's HTTP routes. webServer may appear after our apply (it is a
   // web-surface service, absent from headless/base trees), so register through
@@ -301,6 +341,20 @@ export function apply(ctx: Context): void {
         writeJson(res, { entries: recent })
       },
     }), 'vision-bridge: route /vision-bridge/recent')
+
+    ctx.effect(() => ws.register({
+      kind: 'exact',
+      path: '/vision-bridge/activity',
+      async handler(req, res) {
+        const url = new URL(req.url ?? '/vision-bridge/activity', 'http://localhost')
+        const sessionId = url.searchParams.get('sessionId') ?? ''
+        writeJson(res, {
+          entries: sessionId.length === 0
+            ? []
+            : activities.forSession(sessionId).map(withTurnState),
+        })
+      },
+    }), 'vision-bridge: route /vision-bridge/activity')
   }
 
   if (webServer !== undefined) {

@@ -20,6 +20,28 @@ export type VisionDescribeCardProps =
   & InjectFace<VisionDescribeCardInjected>
   & PropsLocale<'vision-bridge'>
 
+/** Shared lifecycle shown by automatic and explicit vision descriptions. */
+export type VisionDescriptionCardStatus = 'running' | 'completed' | 'failed' | 'interrupted'
+
+/** Props for the presentation-only shared card. */
+export interface VisionDescriptionCardProps {
+  status: VisionDescriptionCardStatus
+  text: string
+  label: string
+}
+
+/** One visual treatment for every description path. */
+export function VisionDescriptionCard({
+  status, text, label,
+}: VisionDescriptionCardProps): JSX.Element {
+  return (
+    <div className={`${css.card} ${css[status]}`} data-vision-description-status={status}>
+      <span className={css.label}>{label}</span>
+      <p className={css.text}>{text}</p>
+    </div>
+  )
+}
+
 /** Extract the description text from a settled result node's text blocks. */
 function descriptionOf(content: readonly ContentBlock[]): string {
   const texts: string[] = []
@@ -37,14 +59,15 @@ function descriptionOf(content: readonly ContentBlock[]): string {
  */
 export function VisionDescribeCard(props: VisionDescribeCardProps): JSX.Element | null {
   const { block, t } = props
-  // Only the settled form carries a description; running calls keep the
-  // generic card (this entry renders null and the fallback row takes over).
-  if (!('kind' in block) || block.kind !== 'tool-result') return null
+  if (!('kind' in block)) {
+    return <VisionDescriptionCard status="running" label={t('panel.title')} text={t('status.describing')} />
+  }
+  if (block.kind !== 'tool-result') return null
   const description = descriptionOf(block.content)
-  return (
-    <div className={css.card}>
-      <span className={css.label}>{t('panel.title')}</span>
-      <p className={css.text}>{description}</p>
-    </div>
-  )
+  const failed = block.isError === true
+  return <VisionDescriptionCard
+    status={failed ? 'failed' : 'completed'}
+    label={t('panel.title')}
+    text={failed ? t('status.describeFail', { message: description }) : description}
+  />
 }

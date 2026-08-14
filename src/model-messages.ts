@@ -8,17 +8,46 @@ export interface ModelImageRequest {
   signal?: AbortSignal
 }
 
-/** One successful automatic description, for recent-history presentation. */
-export interface ModelImageDescription {
+/** Request-scoped facts supplied by the wrapper adapter. */
+export interface ModelImageRewriteContext {
+  signal?: AbortSignal
+  sessionId?: string
+}
+
+/** Stable identity shared by every event in one logical description operation. */
+export interface ModelImageOperation {
+  operationId: string
   attachmentId: string
+  sessionId?: string
+  messageId?: string
+}
+
+/** One successful automatic description, for recent-history presentation. */
+export interface ModelImageDescription extends ModelImageOperation {
   description: string
+}
+
+/** One failed automatic description, already normalized for presentation. */
+export interface ModelImageFailure extends ModelImageOperation {
+  error: string
 }
 
 /** Dependencies kept outside the model-message transformation policy. */
 export interface ModelImageBridgeOptions {
   describe(request: ModelImageRequest): Promise<string>
+  onStart?(entry: ModelImageOperation): void
   onDescription(entry: ModelImageDescription): void
+  onFailure?(entry: ModelImageFailure): void
   failureText(error: unknown): string
+}
+
+class DescriptionFailure extends Error {
+  readonly displayText: string
+
+  constructor(displayText: string, options: ErrorOptions) {
+    super(displayText, options)
+    this.displayText = displayText
+  }
 }
 
 /** Extract the user's question/intent from one message. */
@@ -40,21 +69,28 @@ export class ModelImageBridge {
   private readonly pending = new Map<string, Promise<string>>()
   private readonly resolved = new Map<string, string>()
   private readonly options: ModelImageBridgeOptions
+  private nextOperation = 0
 
   constructor(options: ModelImageBridgeOptions) {
     this.options = options
   }
 
   /** Return a completed automatic description without starting new work. */
-  cachedDescription(attachmentId: string): string | undefined {
-    return this.resolved.get(attachmentId)
+  cachedDescription(attachmentId: string, sessionId?: string): string | undefined {
+    return this.resolved.get(this.cacheKey(attachmentId, sessionId))
   }
 
   /** Build model-bound copies of messages containing image blocks. */
-  async rewrite(messages: readonly Message[], signal?: AbortSignal): Promise<readonly Message[]> {
+  async rewrite(
+    messages: readonly Message[],
+    context: ModelImageRewriteContext = {},
+  ): Promise<readonly Message[]> {
     let changed = false
     const rewritten = await Promise.all(messages.map(async (message): Promise<Message> => {
-      const result = await this.rewriteContent(message.content, userTextOf(message), signal)
+      const messageId = typeof (message as { id?: unknown }).id === 'string'
+        ? String(message.id)
+        : undefined
+      const result = await this.rewriteContent(message.content, userTextOf(message), context, messageId)
       if (!result.changed) return message
       changed = true
       return { ...message, content: result.content }
@@ -66,14 +102,15 @@ export class ModelImageBridge {
   private async rewriteContent(
     content: readonly ContentBlock[],
     userText: string,
-    signal?: AbortSignal,
+    context: ModelImageRewriteContext,
+    messageId?: string,
   ): Promise<{ content: ContentBlock[]; changed: boolean }> {
     const results = await Promise.all(content.map(async (block): Promise<{
       block: ContentBlock
       changed: boolean
     }> => {
       if (block.type === 'tool-result') {
-        const nested = await this.rewriteContent(block.content, userText, signal)
+        const nested = await this.rewriteContent(block.content, userText, context, messageId)
         return nested.changed
           ? { block: { ...block, content: nested.content }, changed: true }
           : { block, changed: false }
@@ -83,7 +120,7 @@ export class ModelImageBridge {
       const attachment = (block as ImageBlock).attachment
       const attachmentId = String(attachment.attachmentId)
       try {
-        const description = await this.descriptionFor(attachment, userText, signal)
+        const description = await this.descriptionFor(attachment, userText, context, messageId)
         return {
           block: {
             type: 'text',
@@ -92,10 +129,13 @@ export class ModelImageBridge {
           changed: true,
         }
       } catch (error) {
+        const failure = error instanceof DescriptionFailure
+          ? error.displayText
+          : this.options.failureText(error)
         return {
           block: {
             type: 'text',
-            text: `[视觉描述失败] ${this.options.failureText(error)}\n[附件] ${attachmentId}\n`,
+            text: `[视觉描述失败] ${failure}\n[附件] ${attachmentId}\n`,
           },
           changed: true,
         }
@@ -110,23 +150,40 @@ export class ModelImageBridge {
   private async descriptionFor(
     attachment: ImageAttachmentRef,
     userText: string,
-    signal?: AbortSignal,
+    context: ModelImageRewriteContext,
+    messageId?: string,
   ): Promise<string> {
     const attachmentId = String(attachment.attachmentId)
-    const existing = this.pending.get(attachmentId)
+    const key = this.cacheKey(attachmentId, context.sessionId)
+    const existing = this.pending.get(key)
     if (existing !== undefined) return existing
-    const pending = this.options.describe({ attachment, userText, signal })
+    const operation: ModelImageOperation = {
+      operationId: `${Date.now().toString(36)}-${(++this.nextOperation).toString(36)}`,
+      attachmentId,
+      ...(context.sessionId === undefined ? {} : { sessionId: context.sessionId }),
+      ...(messageId === undefined ? {} : { messageId }),
+    }
+    this.options.onStart?.(operation)
+    const pending = this.options.describe({ attachment, userText, signal: context.signal })
       .then((description) => {
-        this.resolved.set(attachmentId, description)
-        this.options.onDescription({ attachmentId, description })
+        this.resolved.set(key, description)
+        this.options.onDescription({ ...operation, description })
         return description
+      }, (error: unknown) => {
+        const displayText = this.options.failureText(error)
+        this.options.onFailure?.({ ...operation, error: displayText })
+        throw new DescriptionFailure(displayText, { cause: error })
       })
-    this.pending.set(attachmentId, pending)
+    this.pending.set(key, pending)
     try {
       return await pending
     } catch (error) {
-      if (this.pending.get(attachmentId) === pending) this.pending.delete(attachmentId)
+      if (this.pending.get(key) === pending) this.pending.delete(key)
       throw error
     }
+  }
+
+  private cacheKey(attachmentId: string, sessionId?: string): string {
+    return `${sessionId ?? ''}\u0000${attachmentId}`
   }
 }

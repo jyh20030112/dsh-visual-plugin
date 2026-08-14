@@ -11,6 +11,16 @@ export interface VisionDescribeCardInjected {
 }
 /** Full card props composed by the keyed Tool slot. */
 export type VisionDescribeCardProps = ToolCallViewProps & InjectFace<VisionDescribeCardInjected> & PropsLocale<'vision-bridge'>;
+/** Shared lifecycle shown by automatic and explicit vision descriptions. */
+export type VisionDescriptionCardStatus = 'running' | 'completed' | 'failed' | 'interrupted';
+/** Props for the presentation-only shared card. */
+export interface VisionDescriptionCardProps {
+    status: VisionDescriptionCardStatus;
+    text: string;
+    label: string;
+}
+/** One visual treatment for every description path. */
+export declare function VisionDescriptionCard({ status, text, label, }: VisionDescriptionCardProps): JSX.Element;
 /**
  * Render one settled `vision_describe` call.
  * @param props - composed props for the keyed Tool slot.

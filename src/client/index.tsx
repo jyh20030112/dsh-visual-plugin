@@ -18,6 +18,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { VisionBridgePanel, type VisionBridgePanelInjected } from './VisionBridgePanel.tsx'
 import { VisionBridgeToggle } from './VisionBridgeToggle.tsx'
 import { VisionDescribeCard } from './VisionDescribeCard.tsx'
+import { InlineVisionDescriptions } from './VisionActivityCards.tsx'
+import { visionActivityDefinition } from './vision-activity-definition.ts'
 import { createVisionBridgeStore } from './store.ts'
 import { en, zh, type VisionBridgeKey } from './locales.ts'
 
@@ -32,7 +34,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'vision-bridge'
 
 /** Required services: the slot registry, connection RPC, and locale registry. */
-export const inject = ['slots', 'connection', 'locale']
+export const inject = ['slots', 'connection', 'locale', 'conversationEvents']
 
 /**
  * Client plugin body: register the floating panel, its sidebar toggle, and
@@ -41,6 +43,7 @@ export const inject = ['slots', 'connection', 'locale']
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-visual-plugin: dictionaries')
+  ctx.conversationEvents.register(visionActivityDefinition)
 
   const connection = ctx.get('connection') as ConnectionHandle | undefined
   const api: IApiClient | undefined = connection?.api
@@ -72,4 +75,11 @@ export function apply(ctx: ClientContext): void {
     key: 'vision_describe',
     locale: NS,
   }, VisionDescribeCard))
+
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node',
+    key: 'vision-activity',
+    locale: NS,
+    inject: () => ({}),
+  }, InlineVisionDescriptions))
 }

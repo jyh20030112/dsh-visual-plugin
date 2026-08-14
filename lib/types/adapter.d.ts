@@ -16,10 +16,11 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import { type Message } from '@deepseek-ai/dsh-llm';
+import type { ModelImageRewriteContext } from './model-messages.ts';
 /** The provider route this wrapper owns; users select it in the model picker. */
 export declare const VISION_PROVIDER = "deepseek-vision";
 /** Async image rewrite performed only for the delegated model request. */
-export type VisionMessageRewriter = (messages: readonly Message[], signal?: AbortSignal) => Promise<readonly Message[]>;
+export type VisionMessageRewriter = (messages: readonly Message[], context: ModelImageRewriteContext) => Promise<readonly Message[]>;
 /**
  * Register the wrapper adapter for {@link VISION_PROVIDER} when the llm seam
  * is present. The registration is effect-bound and disposes with the fiber.

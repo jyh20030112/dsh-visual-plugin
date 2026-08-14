@@ -28,6 +28,7 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 ## Features
 
 - **Automatic description** — the wrapper adapter recursively describes uploaded images and image-bearing tool results in a model-bound copy while the visible chat keeps the originals.
+- **In-conversation lifecycle cards** — automatic analysis appears immediately below its source image and settles in place as success or failure; one logical analysis produces one card.
 - **Intent-aware prompts** — send an image *with a question* and the description is generated from your own words.
 - **`vision_describe` tool** — the model can answer a later follow-up question when the automatic description lacks the requested detail.
 - **Right-side panel** — configure endpoint / model / key, test the connection, watch one latest description per image with thumbnails (2s auto-refresh), read remaining balance.
@@ -66,7 +67,7 @@ src/
   description-policy.ts  intent-first prompt + low-information retry
   config.ts     settings namespace `vision-bridge` + schema
   adapter.ts    deepseek-vision wrapper adapter (admission + private rewrite boundary)
-  client/       browser half: panel / sidebar toggle / tool card / locales / css
+  client/       browser half: panel / sidebar toggle / automatic + tool cards / locales / css
 cordis.patch.yml  bundle patch layer
 ```
 

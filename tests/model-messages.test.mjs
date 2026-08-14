@@ -48,10 +48,10 @@ test('rewrites images only in model-bound copies and preserves the visible user 
   ])
   assert.equal(calls.length, 1)
   assert.equal(calls[0].userText, '这是什么？')
-  assert.deepEqual(descriptions, [{
-    attachmentId: 'sha256:castle',
-    description: '一幅城堡与山谷的风景画。',
-  }])
+  assert.equal(descriptions.length, 1)
+  assert.match(descriptions[0].operationId, /.+/)
+  assert.equal(descriptions[0].attachmentId, 'sha256:castle')
+  assert.equal(descriptions[0].description, '一幅城堡与山谷的风景画。')
 })
 
 test('caches one automatic description per attachment across model steps', async () => {
@@ -76,15 +76,49 @@ test('caches one automatic description per attachment across model steps', async
   assert.equal(bridge.cachedDescription('sha256:castle'), 'cached description')
 })
 
+test('publishes one visual lifecycle for an automatic description across model steps', async () => {
+  const lifecycle = []
+  let describeCalls = 0
+  const bridge = new ModelImageBridge({
+    describe: async () => {
+      describeCalls += 1
+      return '一只白色鲸鱼图标。'
+    },
+    failureText: () => '视觉解析失败。',
+    onStart: event => lifecycle.push({ type: 'start', ...event }),
+    onDescription: event => lifecycle.push({ type: 'success', ...event }),
+    onFailure: event => lifecycle.push({ type: 'failure', ...event }),
+  })
+  const messages = [{
+    id: 'message-lifecycle',
+    role: 'user',
+    content: [{ type: 'image', attachment }, { type: 'text', text: '这是什么？' }],
+  }]
+
+  await bridge.rewrite(messages, { sessionId: 'session-1' })
+  await bridge.rewrite(messages, { sessionId: 'session-1' })
+
+  assert.equal(describeCalls, 1)
+  assert.deepEqual(lifecycle.map(event => event.type), ['start', 'success'])
+  assert.equal(lifecycle[0].operationId, lifecycle[1].operationId)
+  assert.equal(lifecycle[0].attachmentId, attachment.attachmentId)
+  assert.equal(lifecycle[1].description, '一只白色鲸鱼图标。')
+  assert.equal(lifecycle[1].sessionId, 'session-1')
+  assert.equal(lifecycle[1].messageId, 'message-lifecycle')
+})
+
 test('does not cache failed descriptions', async () => {
   let calls = 0
+  const lifecycle = []
   const bridge = new ModelImageBridge({
     describe: async () => {
       calls += 1
       if (calls === 1) throw new Error('temporary failure')
       return 'recovered description'
     },
+    onStart: event => lifecycle.push({ type: 'start', ...event }),
     onDescription: () => {},
+    onFailure: event => lifecycle.push({ type: 'failure', ...event }),
     failureText: error => `[视觉描述失败] ${error instanceof Error ? error.message : String(error)}`,
   })
   const message = { role: 'user', content: [{ type: 'image', attachment }] }
@@ -95,6 +129,9 @@ test('does not cache failed descriptions', async () => {
   assert.match(failed[0].content[0].text, /temporary failure/)
   assert.match(recovered[0].content[0].text, /recovered description/)
   assert.equal(calls, 2)
+  assert.deepEqual(lifecycle.map(event => event.type), ['start', 'failure', 'start'])
+  assert.equal(lifecycle[0].operationId, lifecycle[1].operationId)
+  assert.equal(lifecycle[1].error, '[视觉描述失败] temporary failure')
 })
 
 test('rewrites read_image output nested inside a tool result before DeepSeek serialization', async () => {

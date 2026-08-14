@@ -25,6 +25,7 @@ import {
   type StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-llm'
+import type { ModelImageRewriteContext } from './model-messages.ts'
 
 /** The provider route this wrapper owns; users select it in the model picker. */
 export const VISION_PROVIDER = 'deepseek-vision'
@@ -35,7 +36,7 @@ const UNDERLYING_PROVIDER = 'deepseek-official'
 /** Async image rewrite performed only for the delegated model request. */
 export type VisionMessageRewriter = (
   messages: readonly Message[],
-  signal?: AbortSignal,
+  context: ModelImageRewriteContext,
 ) => Promise<readonly Message[]>
 
 /**
@@ -84,7 +85,10 @@ class VisionBridgeAdapter extends LlmAdapter {
   }
 
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    const rewritten = await this.rewrite(options.messages, options.signal)
+    const rewritten = await this.rewrite(options.messages, {
+      signal: options.signal,
+      sessionId: options.sessionId === undefined ? undefined : String(options.sessionId),
+    })
     const delegated: GenerateOptions = rewritten === options.messages
       ? { ...options, provider: UNDERLYING_PROVIDER }
       : { ...options, provider: UNDERLYING_PROVIDER, messages: rewritten as Message[] }
