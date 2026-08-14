@@ -91,6 +91,29 @@ export function apply(ctx: Context): void {
     return Buffer.from(data).toString('base64')
   }
 
+  /** Extract the user's text (their question/intent) from one message. */
+  function userTextOf(message: UserMessage): string {
+    const text = message.content
+      .filter(block => block.type === 'text')
+      .map(block => (block as { text?: string }).text ?? '')
+      .join('\n')
+      .trim()
+    return text
+  }
+
+  /**
+   * Build the vision prompt from the user's own words: describe the image
+   * with their question or intent in focus, so the automatic description
+   * answers what the user actually asked instead of a generic walkthrough.
+   * No text alongside the image falls back to the API's default prompt.
+   */
+  function visionPromptFor(userText: string): string | undefined {
+    const text = userText.trim()
+    if (text.length === 0) return undefined
+    return `用户针对这张图片提出的问题或意图：${text}\n`
+      + '请以该意图为重点，详细、准确地描述图片内容，并完整列出图片中出现的所有文字。'
+  }
+
   /** Replace every image block in one message with its description text. */
   async function describeImagesInMessage(
     message: UserMessage,
@@ -108,7 +131,7 @@ export function apply(ctx: Context): void {
       facts.model,
       toBase64(stored.data),
       ref.mediaType,
-      undefined,
+      visionPromptFor(userTextOf(message)),
       signal,
     )
     return { text: result.description, attachmentId: String(ref.attachmentId) }
