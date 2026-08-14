@@ -56,6 +56,14 @@ as the vision backend. Its SGLang deployment can expose an OpenAI-compatible
 (for example, `Qwythos`) in the Vision Bridge panel. The plugin is not tied to
 Qwythos-9B and can use any compatible vision model.
 
+## Uninstall
+
+```sh
+dsh plugin --profile web remove dsh-visual-plugin
+```
+
+Restart `dsh web`. The command forwards to `pnpm remove` inside the profile, and the bundle layer list reconciles to drop the plugin automatically.
+
 ## How it works
 
 ```

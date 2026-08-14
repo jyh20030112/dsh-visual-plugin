@@ -55,6 +55,14 @@ dsh plugin --profile web add dsh-visual-plugin   # 或：github:jyh20030112/dsh-
 `/v1` 接口；在视觉桥接面板中填写接口地址和服务端注册的模型名称
 （例如 `Qwythos`）即可。插件并不绑定 Qwythos-9B，也可以接入其他兼容的视觉模型。
 
+## 卸载
+
+```sh
+dsh plugin --profile web remove dsh-visual-plugin
+```
+
+重启 `dsh web`。该命令会在 profile 内转发执行 `pnpm remove`，bundle 层列表会自动同步移除该插件。
+
 ## 工作原理
 
 ```
