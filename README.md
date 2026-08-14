@@ -1,3 +1,5 @@
+# dsh-visual-plugin
+
 <p align="center">
   <a href="https://www.npmjs.com/package/dsh-visual-plugin"><img src="https://img.shields.io/npm/v/dsh-visual-plugin?logo=npm&label=npm" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/dsh-visual-plugin"><img src="https://img.shields.io/npm/dm/dsh-visual-plugin?label=downloads" alt="npm downloads"></a>
@@ -8,11 +10,9 @@
   <img src="https://img.shields.io/badge/zero__runtime__deps-16a34a?style=flat" alt="zero runtime deps">
 </p>
 
-# dsh-visual-plugin
-
 <p align="center">
-  Give your text-only model eyes: forward images to an OpenAI-compatible
-  vision model and see results in a Web UI panel.
+  Give your text-only model eyes: forward user images to any OpenAI-compatible
+  vision model and see the results in a Web UI right panel.
 </p>
 
 <p align="center">
@@ -23,18 +23,46 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 ## Features
 
-- Automatically describes user images for text-only models (`agent/pre-step` interception)
-- `vision_describe` tool for follow-up questions
-- Right-side panel: configure endpoint / model / key, test connection, history with thumbnails
-- Published as a dual-half dsh bundle on [npm](https://www.npmjs.com/package/dsh-visual-plugin)
+- **Automatic description** — images sent in the composer are intercepted at `agent/pre-step` and rewritten to `[视觉描述] <description>` text before reaching the text-only model.
+- **Intent-aware prompts** — send an image *with a question* and the description is generated from your own words.
+- **`vision_describe` tool** — the model can answer follow-up questions about any previously attached image.
+- **Right-side panel** — configure endpoint / model / key, test the connection, watch recent descriptions with thumbnails (2s auto-refresh), read remaining balance.
+- **Secrets stay secret** — the API key lives in the harness credentials seam (write-only, never echoed).
 
-## Install
+## Quick start
 
 ```sh
-dsh plugin --profile web add dsh-visual-plugin
+dsh plugin --profile web add dsh-visual-plugin   # or: github:jyh20030112/dsh-visual-plugin
 ```
 
-Restart `dsh web`, open the panel from the sidebar footer, configure the vision endpoint / model / key, pick provider **DeepSeek (Vision)** in the model picker, then send an image.
+Restart `dsh web`, then:
+
+1. Open the panel from the sidebar footer (**视觉桥接 / Vision Bridge**).
+2. Configure the endpoint URL, a vision model name, and the API key; click **保存配置** → **测试连接**.
+3. In the model picker, select provider **DeepSeek (Vision)** — the plugin's wrapper adapter declares image input so the gateway admits uploads.
+4. Send an image (optionally with a question). The model answers from the generated description and the panel shows the thumbnail + description within ~2s.
+
+## How it works
+
+```
+image in composer → gateway admits it (DeepSeek (Vision)) → agent/pre-step intercepts
+  → readImage → vision API (intent-aware prompt) → "[视觉描述] …" replaces the image block
+  → text-only model answers → /vision-bridge/recent → panel thumbnail + description (2s poll)
+```
+
+Unconfigured or failed calls degrade to a `[视觉描述失败] <reason>` placeholder, so the conversation never breaks.
+
+## Project layout
+
+```
+src/
+  index.ts      host plugin: pre-step interception + vision_describe + HTTP routes
+  vision.ts     OpenAI-compatible vision calls (describe / test / balance)
+  config.ts     settings namespace `vision-bridge` + schema
+  adapter.ts    deepseek-vision wrapper adapter (image-intake enabler)
+  client/       browser half: panel / sidebar toggle / tool card / locales / css
+cordis.patch.yml  bundle patch layer
+```
 
 ## Build
 
@@ -42,14 +70,15 @@ Restart `dsh web`, open the panel from the sidebar footer, configure the vision 
 npm run bootstrap && npm run typecheck && npm run build   # needs a local harness checkout
 ```
 
+Prebuilt `lib/` is committed, so consumers never build.
+
 ## CI/CD
 
-`ci.yml` verifies on every push/PR; `release.yml` (tag `v*`) packs, creates a GitHub Release, and publishes to npm.
+`ci.yml` verifies artifacts and the pack contents on every push/PR. `release.yml` (tag `v*`) checks the version, packs, creates a GitHub Release, and publishes to npm.
 
 ## Resources
 
-- [PRD](docs/vision-bridge-prd.md)
-- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+- [PRD](docs/vision-bridge-prd.md) · [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 ## License
 
