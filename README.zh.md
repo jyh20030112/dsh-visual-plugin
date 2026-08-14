@@ -1,6 +1,10 @@
 # dsh-visual-plugin
 
 <p align="center">
+  <img src="https://raw.githubusercontent.com/jyh20030112/dsh-visual-plugin/main/assets/deepseek_neon_pixel_whale_transparent.svg" width="240" alt="DeepSeek 霓虹像素鲸鱼">
+</p>
+
+<p align="center">
   <a href="https://www.npmjs.com/package/dsh-visual-plugin"><img src="https://img.shields.io/npm/v/dsh-visual-plugin?logo=npm&label=npm" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/dsh-visual-plugin"><img src="https://img.shields.io/npm/dm/dsh-visual-plugin?label=downloads" alt="npm downloads"></a>
   <a href="https://github.com/jyh20030112/dsh-visual-plugin/stargazers"><img src="https://img.shields.io/github/stars/jyh20030112/dsh-visual-plugin?logo=github&label=Stars" alt="GitHub stars"></a>
@@ -23,7 +27,7 @@
 
 ## 特性
 
-- **自动描述图片** —— 输入栏发图后，`agent/pre-step` 拦截图片块，在到达纯文本模型前改写为 `[视觉描述] <描述>` 文本。
+- **自动描述图片** —— 包装适配器只在发给模型的副本中生成 `[视觉描述]`，聊天界面保留原始图片和用户问题。
 - **按问题定向描述** —— 发图同时带问题时，描述提示词由你的原话生成。
 - **`vision_describe` 工具** —— 模型可对任意已附图追问细节。
 - **右侧面板** —— 配置接口 / 模型 / Key、测试连接、查看最近描述（缩略图 + 2 秒自动刷新）、剩余额度。
@@ -45,8 +49,8 @@ dsh plugin --profile web add dsh-visual-plugin   # 或：github:jyh20030112/dsh-
 ## 工作原理
 
 ```
-发图 → 网关放行（DeepSeek (Vision)）→ agent/pre-step 拦截
-  → readImage → 视觉 API（按问题意图的提示词）→ 图片块改写为 "[视觉描述] …" 文本
+发图 → 网关放行（DeepSeek (Vision)）→ 聊天记录保留原始图片
+  → adapter stream → readImage → 视觉 API → 仅在模型私有请求中改写为 "[视觉描述] …"
   → 纯文本模型作答 → /vision-bridge/recent → 面板缩略图 + 描述（2s 轮询）
 ```
 
@@ -56,10 +60,12 @@ dsh plugin --profile web add dsh-visual-plugin   # 或：github:jyh20030112/dsh-
 
 ```
 src/
-  index.ts      host 插件：pre-step 拦截 + vision_describe + HTTP 路由
+  index.ts      host 插件：视觉编排 + vision_describe + HTTP 路由
   vision.ts     OpenAI 兼容视觉调用（describe / test / balance）
+  model-messages.ts  模型请求边界改写 + 按附件缓存
+  description-policy.ts  意图优先提示词 + 低信息重试
   config.ts     settings 命名空间 `vision-bridge` + schema
-  adapter.ts    deepseek-vision 包装适配器（图片入站使能）
+  adapter.ts    deepseek-vision 包装适配器（图片入站 + 私有改写边界）
   client/       浏览器半：面板 / 侧栏开关 / 工具卡片 / 文案 / 样式
 cordis.patch.yml  bundle 补丁层
 ```

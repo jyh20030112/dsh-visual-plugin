@@ -22,10 +22,10 @@
 
 | 半 | 位置（编译产物，gitignored） | 内容 |
 |---|---|---|
-| Host | `packages/extensions/vision-bridge/lib/types/{index,vision,config,invariant}.js`（533 行） | `agent/pre-step` 图片拦截转写、`vision_describe` 工具、`/vision-bridge/{test,balance,recent}` 路由、settings/credentials 配置 |
+| Host | `packages/extensions/vision-bridge/lib/types/{index,vision,config,invariant}.js`（533 行） | adapter 模型私有请求改写、`vision_describe` 工具、`/vision-bridge/{test,balance,recent}` 路由、settings/credentials 配置 |
 | Client | `packages/client/ui-vision-bridge/lib/types/client/{index,store,VisionBridgePanel,VisionBridgeToggle,VisionDescribeCard,locales}.js`（289 行） | `shell.overlay` 右侧浮动面板（配置表单+测试+余额+历史缩略图）、`sidebar.footer.action` 开关、`tool.call.toolview` keyed `vision_describe` 结果卡片、zh/en 文案 |
 
-**与需求逐条对应**：url/model_name/api_key 配置表单 ✓；测试连接 ✓；发图自动调用（pre-step 拦截改写为 `[视觉描述]` 文本）✓；图片+结果右侧面板同步显示（recent 历史 + 缩略图）✓；追问工具 `vision_describe` ✓。
+**与需求逐条对应**：url/model_name/api_key 配置表单 ✓；测试连接 ✓；发图自动调用（adapter 只改写模型私有请求）✓；聊天界面保留原始图片 ✓；图片+结果右侧面板同步显示（recent 历史 + 缩略图）✓；追问工具 `vision_describe` ✓。
 
 **参考实现缺失的部分**（即本项目要补的）：CSS Modules、两个包的 package.json/tsconfig/cordis.patch.yml、tsconfig.client.json 引用行、web-app browser plugin roster 接线、可发布 bundle 打包。且参考实现里 `ctx.layout.toggleVisionBridge()` 依赖对 layout 服务的进程内扩展——**第三方 bundle 应改用 store seat 的 actions（open/toggle/close），不碰 layout 服务**。
 
@@ -45,9 +45,9 @@
 
 - 浏览器发图经 `sessions.prompt` RPC → apiproxy 检查当前模型 `resolveModelInfo().inputModalities`，**不含 `image` 即拒绝上传**：`MODEL_DOES_NOT_SUPPORT_IMAGES`（`packages/host/apiproxy/src/api-proxy.ts:2482-2494`）。
 - llm-deepseek 声明 `inputModalities:['text']`（`llm-deepseek/src/adapter.ts:113`），且其序列化器对含图消息直接抛 `UNSUPPORTED_CONTENT`（`llm-deepseek/src/serialize.ts:63-68`）。
-- **推论**：原参考实现的 `agent/pre-step` 拦截只有在图片已进入会话日志后才触发——但纯文本模型在网关就把上传拒了，**拦截根本触发不到**。因此本插件必须额外注册一个**包装适配器**：
+- **推论**：图片必须先以原始 `ImageBlock` 进入会话日志并供 UI 展示，再在模型请求边界完成私有改写。因此本插件注册一个**包装适配器**：
   1. `resolveModel()` 返回 `inputModalities` 追加 `'image'` → 放行网关上传；
-  2. `stream()` 内把漏网的 `ImageBlock` 改写为文本占位符（防御层，避免 `UNSUPPORTED_CONTENT`），主改写仍由 pre-step 完成。
+  2. `stream()` 内读取附件、调用视觉模型，并只在委托给文本模型的消息副本中改写为 `[视觉描述]`（避免 `UNSUPPORTED_CONTENT` 且不污染可见 `user/message`）。
 - 权衡：包装适配器会改变该 provider 的模型目录语义（模型在 UI 上显示支持 image 输入）——接受并文档化（ADR-8）。
 
 #### ⑤ 通信通道（Client 探讨子代理结论）
@@ -63,7 +63,7 @@
 
 ### 2.1 目标（G）
 
-- **G1（自动转述）**：用户发图片后，无视觉主模型能收到图片的文字描述并正常作答（`agent/pre-step` 自动拦截转写）。
+- **G1（自动转述）**：用户发图片后，可见会话保留原图，无视觉主模型通过 adapter 私有请求副本收到文字描述并正常作答。
 - **G2（可追问）**：模型通过 `vision_describe` 工具对指定图片回答后续问题；对话中渲染专用结果卡片。
 - **G3（配置面板）**：Web UI 右侧浮动面板配置视觉服务（url / model_name / api_key）、测试连接、显示结果与余额。
 - **G4（同步展示）**：用户发的图片与视觉结果在面板历史中同步显示（缩略图 + 描述 + 时间）；同一附件只显示一张卡片，后续描述更新原卡片并置顶。
@@ -83,9 +83,9 @@
 ### 3.1 核心场景
 
 - **S1 配置**：点击侧栏底部"视觉桥接"开关 → 右侧浮动面板 → 填 `接口地址` / `模型名称` / `API Key`（密码框，仅填一次）→ `保存配置` → `测试连接`（显示延迟或错误码）。
-- **S2 发图自动描述**：输入栏粘贴/上传/拖拽图片 → 发送 → 主模型收到 `[视觉描述] <text>\n[附件] <id>` 文本并正常回复；面板"最近描述"出现该图片唯一的缩略图 + 描述卡片；当前轮不重复调用工具。
+- **S2 发图自动描述**：输入栏粘贴/上传/拖拽图片 → 发送 → 聊天气泡仍显示原始图片 + 用户原话；adapter 私有请求中主模型收到 `[视觉描述] <text>\n[附件] <id>` 并正常回复；面板"最近描述"出现唯一卡片；当前轮工具调用复用自动描述缓存。
 - **S3 追问**：后续轮次询问"图里的报错信息是什么？"且已有描述不足 → 模型调用 `vision_describe(attachmentId)` → 对话中渲染"视觉桥接"结果卡片；面板更新该附件的原记录并置顶。
-- **S4 未配置/失败**：未配置时发图 → 消息为 `[视觉描述失败] vision model is not configured (set it in the right-side panel)`，模型不崩溃；API 错误按错误码显示在面板。
+- **S4 未配置/失败**：未配置时发图 → 可见消息仍保留原图，模型私有请求降级为 `[视觉描述失败] vision model is not configured (set it in the right-side panel)`，模型不崩溃；API 错误按错误码显示在面板。
 
 ---
 
@@ -95,16 +95,17 @@
 
 - 经 `ctx.llm.registerAdapter(['deepseek-vision'], wrapper)` 注册包装适配器，委托底层 provider 适配器：
   - `resolveModel()`：返回 `{...underlying, inputModalities: [...underlying.inputModalities, 'image']}` → **放行网关图片上传**（否则 `MODEL_DOES_NOT_SUPPORT_IMAGES`）。
-  - `stream()`：把仍携带 `ImageBlock` 的消息改写为文本占位符 `<image attachmentId="…">` 后委托底层（防御层：pre-step 未改写时的兜底，避免 `UNSUPPORTED_CONTENT`）。
+  - `stream()`：异步生成视觉描述，在不修改原消息对象的前提下，把模型请求副本中的 `ImageBlock` 改写为 `[视觉描述] <text>\n[附件] <id>` 后委托底层。
 - 模型目录语义变化（该 provider 模型显示支持 image 输入）为已知权衡（ADR-8）。
 
-### FR1 Host：图片自动描述（`agent/pre-step` 拦截，waterfall）
+### FR1 Host：图片自动描述（adapter 模型请求边界）
 
-- 消息含 `image` 块时触发：
-  1. `resolvedFacts()`：settings（url/model/apiKeyEnv）+ credentials 解析，缺失 → 替换为失败文案。
+- adapter 收到的模型消息含 `image` 块时触发，durable `user/message` 与聊天 UI 不改写：
+  1. `resolvedFacts()`：settings（url/model/apiKeyEnv）+ credentials 解析，缺失 → 仅在模型请求副本中替换为失败文案。
   2. `attachments.readImage(ref, signal)` → base64 → `describeImage(url, apiKey, model, data, mediaType, prompt?, signal)`。
-  3. 图片块改写为文本块 `[视觉描述] <text>\n[附件] <attachmentId>`；记录 `attachmentId → ref` 映射（供 `vision_describe`）。
-  4. 按 `attachmentId` 写入或替换 `recent` 记录（`{time, attachmentId, description}`，新记录置顶，上限 20）。
+  3. 模型请求副本的图片块改写为文本块 `[视觉描述] <text>\n[附件] <attachmentId>`；原始消息保留图片；记录 `attachmentId → ref` 映射（供 `vision_describe`）。
+  4. 按 `attachmentId` 缓存首次成功的自动描述，跨 model step 复用；写入或替换 `recent` 记录（新记录置顶，上限 20）。
+  5. 若视觉接口只返回“图片中没有文字”等低信息回答，以更强的意图优先提示词重试一次；不得无限重试。
 - 失败降级（文案进 i18n）：
   - 附件服务不可用 → `[视觉描述失败] the attachment service is unavailable`
   - 未配置 → `[视觉描述失败] vision model is not configured (set it in the right-side panel)`
@@ -162,10 +163,11 @@
 输入栏发图（ui-attachment：粘贴/拖放/上传 → createDraftImages → base64 content part）
   → sessions.prompt RPC：网关校验 inputModalities（包装适配器已声明 image → 放行；否则 MODEL_DOES_NOT_SUPPORT_IMAGES）
   → 宿主提交附件，user/message 携带 ImageBlock（attachmentId = 内容寻址 sha256:…）
-  → agent/pre-step：vision-bridge 拦截
-      ├─ 配置缺失 → [视觉描述失败] 占位（模型继续，不崩）
-      └─ 正常 → readImage → 视觉 API → 改写为 [视觉描述] 文本块 + recent 记录
-  → 主模型基于文本描述正常作答（包装适配器 stream() 兜底改写任何漏网 ImageBlock）
+  → user/message 原样持久化并显示图片 + 用户问题
+  → deepseek-vision adapter stream() 创建模型私有消息副本
+      ├─ 配置缺失 → 私有副本中使用 [视觉描述失败] 占位（模型继续，不崩）
+      └─ 正常 → readImage → 视觉 API → 私有副本改写为 [视觉描述] + recent 记录
+  → 主模型基于文本描述正常作答；原始会话消息仍为 ImageBlock
   → 面板轮询 /recent → 右侧浮动面板显示缩略图+描述
 后续追问且已有描述不足 → 模型调用 vision_describe(attachmentId) → 对话结果卡片 + 面板原记录更新并置顶
 ```
@@ -180,10 +182,10 @@
 ## 5. 非功能需求（NFR）
 
 - **安全**：api_key 仅存 credentials（write-only）；不出现在 settings 明文、日志、模型上下文、前端读回；Bearer 请求不跟随重定向；错误信息脱敏。
-- **性能**：单次描述 60s 超时；`recent` 上限 20；面板按需加载缩略图。
+- **性能**：单次描述 60s 超时；低信息回答最多重试一次；同附件自动描述跨 step 缓存；`recent` 上限 20；面板按需加载缩略图。
 - **兼容**：OpenAI 兼容 `/chat/completions`；支持多图（逐图描述，每图一次调用）；gif/png/jpeg/webp（与输入栏 MIME 校验一致）。
 - **可发布性**：满足 bundle 规范（`dsh.bundle.patch` → `cordis.patch.yml`）；client 半 `dsh.client.platform:'web'` + `exports["./client"]` + 预构建 `lib/client.js`；`files` 含 `lib/index.js`、`lib/client.js`、`cordis.patch.yml`、`lib/types/**/*.d.ts`；**自备 tsdown.client.ts 协议副本**；react 保持 external。
-- **测试**：host 单测（vision.ts 错误归一化、pre-step 重写、settings/credentials 解析）、client 组件测试（表单/历史/卡片）、e2e（`dsh plugin` 安装 → 发图 → 面板显示 → 追问）。
+- **测试**：host 单测（模型私有副本改写且原消息不变、缓存、低信息重试、同轮工具保护、settings/credentials 解析）、client 组件测试（表单/历史/卡片）、e2e（安装 → 发图 → 可见消息保留原图 → 面板显示 → 追问）。
 
 ---
 
@@ -199,10 +201,13 @@ vision-bridge/
 │                          #   （一行即可：client-modules 扫描该 loader 行 → 包声明 dsh.client → 服务 lib/client.js）
 ├── tsconfig.json / tsdown.config.ts   # host 面 → lib/index.js；client 面 → lib/client.js（closure-factory，tsdown.client.ts 副本）
 ├── src/
-│   ├── index.ts           # host 插件：pre-step 拦截 + vision_describe + webServer 路由（按编译产物重建）
+│   ├── index.ts           # host 插件：视觉编排 + vision_describe + webServer 路由（按编译产物重建）
 │   ├── vision.ts          # OpenAI 兼容视觉调用（按编译产物重建）
 │   ├── config.ts          # settings 命名空间 + schema（按编译产物重建）
-│   ├── adapter.ts         # 包装适配器：inputModalities 声明 + stream() 兜底改写（新，FR0）
+│   ├── adapter.ts         # 包装适配器：inputModalities 声明 + stream() 私有请求改写（FR0）
+│   ├── model-messages.ts  # 模型消息副本改写 + 按附件缓存
+│   ├── description-policy.ts # 意图优先提示词 + 低信息重试
+│   ├── turn-guard.ts      # 同轮附件工具调用保护
 │   ├── invariant.ts       # invariants 伴生（按编译产物重建）
 │   └── client/
 │       ├── index.tsx      # slots 注册：shell.overlay 面板 + sidebar.footer.action 开关 + tool.call.toolview 卡片
@@ -233,11 +238,11 @@ vision-bridge/
 | ADR-1 | 面板槽位 | `shell.overlay`（list，叠加，id `vision-bridge-panel`，order 100） | 参考实现同款；`details` 被 ui-conversation 占用会挤掉工具详情 |
 | ADR-2 | 面板数据获取 | 轮询 `/recent` + 手动刷新 | 第三方 bundle 无法改 `remote-events` 白名单；recent 为纯展示数据 |
 | ADR-3 | api_key 存储 | credentials 引用（env `VISION_API_KEY`），settings 只存 url/model/apiKeyEnv | 安全约束；参考实现同款 |
-| ADR-4 | 触发方式 | 自动拦截（pre-step）+ `vision_describe` 工具并存 | 用户要求"发图自动调用"；工具仅用于后续轮次中已有描述不足的追问，同轮禁止重复调用 |
+| ADR-4 | 触发方式 | adapter 自动描述 + `vision_describe` 工具并存 | 自动描述只发生在模型请求边界；工具仅用于后续追问，同轮调用直接复用缓存 |
 | ADR-5 | 面板开合 | store seat actions（defineStore），不扩展 layout 服务 | 第三方 bundle 不得改仓库内服务 |
 | ADR-6 | 交付形态 | 单包双端（exports "." + "./client" + dsh.client），patch 插一行 | 与 ui-cordis 同构；client-modules 扫描 loader 行即可发现 |
 | ADR-7 | 主模型未来支持视觉 | 面板可加"启用/禁用"（P1 增强） | 防功能冗余 |
-| ADR-8 | 图片入站使能 | 注册包装适配器（inputModalities 追加 image + stream 兜底改写） | 网关 `MODEL_DOES_NOT_SUPPORT_IMAGES` 与 `UNSUPPORTED_CONTENT` 双重门槛必须绕过；接受模型目录语义变化并文档化 |
+| ADR-8 | 图片入站使能 | 注册包装适配器（inputModalities 追加 image + stream 私有改写） | 同时跨过上传与序列化门槛，并隔离 durable/UI 消息与模型上下文 |
 
 ---
 
@@ -245,9 +250,9 @@ vision-bridge/
 
 1. **AC1**：`dsh plugin --profile <name> add <包>` 安装成功；`dsh --profile <name> --dump-config` 可见补丁层；**重启后** Web 启动无报错，侧栏出现"视觉桥接"开关，点击出现右侧浮动面板。
 2. **AC2**：面板填写 url/model/api_key → 测试连接 → 返回 ok + latency（真实或本地 mock 端点）。
-3. **AC3**：配置成功后发一张图片 → 上传不被网关拒绝（无 `MODEL_DOES_NOT_SUPPORT_IMAGES`）→ 模型回复体现图片信息（自动描述生效）；当前轮不重复调用工具，面板"最近描述"仅出现该附件的一张缩略图+描述卡片。
+3. **AC3**：配置成功后发一张图片 → 聊天气泡保留原始图片和用户原话，不出现 `[视觉描述]`/附件 ID → 模型回复体现图片信息；同轮工具复用缓存，面板仅出现一张描述卡片。
 4. **AC4**：后续追问"图中 XX 是什么"且已有描述不足 → 模型调用 `vision_describe` → 对话出现"视觉桥接"结果卡片；面板更新该附件原记录且不产生重复卡片。
-5. **AC5**：未配置时发图 → 消息为 `[视觉描述失败]` 占位，模型正常继续，不崩溃。
+5. **AC5**：未配置时发图 → 可见消息仍为原图；仅模型私有副本出现 `[视觉描述失败]` 占位，模型正常继续，不崩溃。
 6. **AC6**：错误映射正确（401→AUTH、429→RATE_LIMIT、超时→TIMEOUT 等），面板展示错误码。
 7. **AC7**：`npm pack` 产物可被 `dsh plugin add ./x.tgz` 安装；浏览器 Network 出现 `/plugins/<scope>/<name>/client.js` 请求。
 8. **AC8**：api_key 不出现在 settings 明文、日志、前端读回、模型上下文；`/vision-bridge/test` 错误响应不含凭证。
@@ -264,12 +269,12 @@ vision-bridge/
 | R4 | 大图/多图性能 | 中 | 依赖 `readImage` 体积限制；多图逐图描述；首版接受 |
 | R5 | git 安装缺预构建产物 | 中 | 用 `prepare` 脚本或发布 tarball/npm（publish.md 结论）；`MissingClientBundleError` 提示需重启 |
 | R6 | 主模型未来支持视觉 | 低 | 面板"启用/禁用"开关（P1） |
-| R7 | 原参考实现缺包装适配器（上传被网关拒、pre-step 不触发） | 中（已纳入设计） | FR0 包装适配器（inputModalities 声明 + stream 兜底改写）为必需件；验证方式：无适配器时发图报 `MODEL_DOES_NOT_SUPPORT_IMAGES`，有适配器后放行 |
+| R7 | 在 pre-step 改写会污染 durable `user/message` 并泄漏内部描述 | 高（已修复） | FR0 adapter 的 stream 是唯一图片改写边界；回归测试断言原始消息对象保持 ImageBlock |
 
 **开放问题（P1 再议，不阻塞首版）**：
 - OQ-1：`/recent` 是否按会话隔离（当前 host 内存、全局共享）。
 - OQ-2：面板是否加自动轮询间隔（当前打开时加载 + 手动刷新）。
-- OQ-3：是否把 `vision_describe` 卡片扩展到 pre-step 自动描述（当前自动描述只进面板历史，不进对话流——参考实现即此行为）。
+- OQ-3：是否为 adapter 自动描述增加独立的非消息型状态指示（当前只进面板历史，不污染对话流）。
 
 ---
 

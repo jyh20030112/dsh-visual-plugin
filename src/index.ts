@@ -1,8 +1,8 @@
 /**
  * Vision bridge plugin, host half: describe user images through a
  * user-configured OpenAI-compatible vision model when the main model has no
- * vision. Intercepts `agent/pre-step` to replace image blocks with text
- * descriptions before serialization (the main route rejects image content),
+ * vision. Rewrites image blocks only in the adapter's model-bound request
+ * copy before serialization (the main route rejects image content),
  * registers the `vision_describe` tool for follow-up asks, serves the
  * connection-test and balance routes the web panel calls, and registers the
  * `deepseek-vision` wrapper adapter so the gateway admits image uploads.
@@ -15,8 +15,6 @@ import type {} from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { ImageBlock, UserMessage } from '@deepseek-ai/dsh-llm'
-import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-credentials'
@@ -27,6 +25,9 @@ import { DEFAULT_API_KEY_ENV, NS, VisionBridgeConfig, type VisionBridgeConfigVal
 import { describeImage, queryBalance, testConnection } from './vision.ts'
 import { registerVisionAdapter } from './adapter.ts'
 import { upsertRecent, type RecentEntry } from './recent.ts'
+import { describeWithLowInformationRetry } from './description-policy.ts'
+import { ModelImageBridge } from './model-messages.ts'
+import { isSameTurnAttachmentToolCall } from './turn-guard.ts'
 
 /** Vision-bridge plugin name. */
 export const name = 'vision-bridge'
@@ -34,23 +35,21 @@ export const name = 'vision-bridge'
 /**
  * Required services: the core seams the bridge cannot function without —
  * the tool registry, the settings/credentials seams for the vision endpoint
- * facts, the attachment store for image bytes, and the llm registry for the
- * wrapper adapter. All ship in the base bundle, so any tree that mounts this
- * plugin provides them; webServer stays optional because it exists only in
- * web-surface trees.
+ * facts, the attachment store for image bytes, the llm registry for the
+ * wrapper adapter, and systemPrompt for model guidance. All ship in the base
+ * bundle; webServer stays optional because it exists only in web-surface trees.
  */
-export const inject = ['tools', 'settings', 'credentials', 'attachments', 'llm']
+export const inject = ['tools', 'settings', 'credentials', 'attachments', 'llm', 'systemPrompt']
 
 /**
- * The host half: pre-step image interception, the describe tool, the panel's
+ * The host half: model-bound image description, the describe tool, the panel's
  * HTTP routes, and the wrapper adapter.
  * @param ctx - plugin context.
  */
 export function apply(ctx: Context): void {
-  // attachmentId -> full reference, learned from the intercepted user images.
-  // The main model never sees image blocks (its route rejects them), so it
-  // can only pass the id from a rewritten [视觉描述] block; the bridge resolves
-  // the full ref it needs for readImage verification here.
+  // attachmentId -> full reference, learned while the adapter privately
+  // rewrites model-bound images. The main model receives the id from that
+  // [视觉描述] block; the bridge resolves the verified ref for later asks here.
   const refs = new Map<string, ImageAttachmentRef>()
 
   // Recent bridge activity, newest first, for the web panel's history feed.
@@ -85,90 +84,35 @@ export function apply(ctx: Context): void {
     return Buffer.from(data).toString('base64')
   }
 
-  /** Extract the user's text (their question/intent) from one message. */
-  function userTextOf(message: UserMessage): string {
-    const text = message.content
-      .filter(block => block.type === 'text')
-      .map(block => (block as { text?: string }).text ?? '')
-      .join('\n')
-      .trim()
-    return text
-  }
-
-  /**
-   * Build the vision prompt from the user's own words: describe the image
-   * with their question or intent in focus, so the automatic description
-   * answers what the user actually asked instead of a generic walkthrough.
-   * No text alongside the image falls back to the API's default prompt.
-   */
-  function visionPromptFor(userText: string): string | undefined {
-    const text = userText.trim()
-    if (text.length === 0) return undefined
-    return `用户针对这张图片提出的问题或意图：${text}\n`
-      + '请以该意图为重点，详细、准确地描述图片内容，并完整列出图片中出现的所有文字。'
-  }
-
-  /** Replace every image block in one message with its description text. */
-  async function describeImagesInMessage(
-    message: UserMessage,
-    facts: { url: string; model: string; apiKey: string },
-    signal: AbortSignal,
-  ): Promise<{ text: string; attachmentId: string } | undefined> {
-    const imageBlock = message.content.find((block): block is ImageBlock => block.type === 'image')
-    if (imageBlock === undefined) return undefined
-    const ref = imageBlock.attachment
-    refs.set(String(ref.attachmentId), ref)
-    const stored = await attachments.readImage(ref, signal)
-    const result = await describeImage(
-      facts.url,
-      facts.apiKey,
-      facts.model,
-      toBase64(stored.data),
-      ref.mediaType,
-      visionPromptFor(userTextOf(message)),
-      signal,
-    )
-    return { text: result.description, attachmentId: String(ref.attachmentId) }
-  }
-
-  /** Replace every image block with a failure text so the main model can answer instead of failing. */
-  function replaceWithFailure(messages: UserMessage[], reason: string): PreStepDecision {
-    const rewritten = messages.map((message) => ({
-      ...message,
-      content: message.content.map((block) => block.type === 'image'
-        ? { type: 'text' as const, text: `[视觉描述失败] ${reason}` }
-        : block),
-    }))
-    return { kind: 'enter', messages: rewritten }
-  }
-
-  ctx.on('agent/pre-step', async ({ messages, signal }, next) => {
-    const hasImage = messages.some(message => message.content.some(block => block.type === 'image'))
-    if (!hasImage) return next()
-    const facts = await resolvedFacts()
-    if (facts === undefined) {
-      return replaceWithFailure(messages, 'vision model is not configured (set it in the right-side panel)')
-    }
-    const rewritten: UserMessage[] = []
-    for (const message of messages) {
-      const described = await describeImagesInMessage(message, facts, signal)
-      if (described === undefined) {
-        rewritten.push(message)
-        continue
+  const modelImages = new ModelImageBridge({
+    async describe({ attachment, userText, signal }) {
+      const attachmentId = String(attachment.attachmentId)
+      refs.set(attachmentId, attachment)
+      const facts = await resolvedFacts()
+      if (facts === undefined) {
+        throw new Error('vision model is not configured (set it in the right-side panel)')
       }
-      rewritten.push({
-        ...message,
-        content: message.content.map((block) => block.type === 'image'
-          ? { type: 'text' as const, text: `[视觉描述] ${described.text}\n[附件] ${described.attachmentId}` }
-          : block),
-      })
-      upsertRecent(recent, {
-        time: Date.now(),
-        attachmentId: described.attachmentId,
-        description: described.text,
-      }, MAX_RECENT)
-    }
-    return { kind: 'enter', messages: rewritten }
+      const stored = await attachments.readImage(attachment, signal)
+      const result = await describeWithLowInformationRetry(
+        prompt => describeImage(
+          facts.url,
+          facts.apiKey,
+          facts.model,
+          toBase64(stored.data),
+          attachment.mediaType,
+          prompt,
+          signal,
+        ),
+        userText,
+      )
+      return result.description
+    },
+    onDescription(entry) {
+      upsertRecent(recent, { time: Date.now(), ...entry }, MAX_RECENT)
+    },
+    failureText(error) {
+      return error instanceof Error ? error.message : String(error)
+    },
   })
 
   ctx.tools.register(defineTool({
@@ -194,8 +138,14 @@ export function apply(ctx: Context): void {
     },
     timeoutMs: 60_000,
     async execute(args, exec) {
-      const ref = refs.get(String(args.attachmentId))
+      const attachmentId = String(args.attachmentId)
+      const ref = refs.get(attachmentId)
       if (ref === undefined) throw new Error(`vision_describe: unknown attachment ${args.attachmentId}`)
+      const cached = modelImages.cachedDescription(attachmentId)
+      if (cached !== undefined && exec.agent !== undefined
+        && isSameTurnAttachmentToolCall(exec.agent.session.events, attachmentId, String(exec.callId))) {
+        return { description: cached }
+      }
       const facts = await resolvedFacts()
       if (facts === undefined) throw new Error('vision_describe: vision model is not configured')
       const stored = await attachments.readImage(ref, exec.signal)
@@ -218,22 +168,19 @@ export function apply(ctx: Context): void {
   }))
 
   // Tell the model how to follow up when it sees a placeholder or a description block.
-  const systemPrompt = ctx.get('systemPrompt')
-  if (systemPrompt !== undefined) {
-    systemPrompt.section({
-      name: 'vision-bridge',
-      order: 115,
-      text: 'The user may attach images. Each attached image is described before it reaches you: '
-        + 'you see "[视觉描述] <description>\\n[附件] <attachmentId>" (or "<image attachmentId=\\"…\\">" as a fallback). '
-        + 'The [视觉描述] block is already the result of a completed vision call, so answer the current message directly from it. '
-        + 'Do not call vision_describe in the same turn that introduces the image. Only call it for a later user question '
-        + 'when the existing description lacks the requested detail.',
-    })
-  }
+  const systemPrompt = ctx.get('systemPrompt')!
+  systemPrompt.section({
+    name: 'vision-bridge',
+    order: 115,
+    text: 'The user may attach images. The model request contains a private replacement for each image: '
+      + '"[视觉描述] <description>\\n[附件] <attachmentId>". The visible chat still keeps the original image. '
+      + 'Answer the current message directly from the supplied description. Do not call vision_describe in the same turn '
+      + 'that introduces the image. Only call it for a later user question when the existing description lacks detail.',
+  })
 
   // FR0: admit image uploads by exposing the deepseek-vision provider route.
   // The llm registry is a hard inject, so the adapter is always registered.
-  registerVisionAdapter(ctx)
+  registerVisionAdapter(ctx, (messages, signal) => modelImages.rewrite(messages, signal))
 
   // The panel's HTTP routes. webServer may appear after our apply (it is a
   // web-surface service, absent from headless/base trees), so register through

@@ -1,6 +1,10 @@
 # dsh-visual-plugin
 
 <p align="center">
+  <img src="https://raw.githubusercontent.com/jyh20030112/dsh-visual-plugin/main/assets/deepseek_neon_pixel_whale_transparent.svg" width="240" alt="DeepSeek neon pixel whale">
+</p>
+
+<p align="center">
   <a href="https://www.npmjs.com/package/dsh-visual-plugin"><img src="https://img.shields.io/npm/v/dsh-visual-plugin?logo=npm&label=npm" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/dsh-visual-plugin"><img src="https://img.shields.io/npm/dm/dsh-visual-plugin?label=downloads" alt="npm downloads"></a>
   <a href="https://github.com/jyh20030112/dsh-visual-plugin/stargazers"><img src="https://img.shields.io/github/stars/jyh20030112/dsh-visual-plugin?logo=github&label=Stars" alt="GitHub stars"></a>
@@ -23,7 +27,7 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 ## Features
 
-- **Automatic description** — images sent in the composer are intercepted at `agent/pre-step` and rewritten to `[视觉描述] <description>` text before reaching the text-only model.
+- **Automatic description** — the wrapper adapter describes images in a model-bound copy while the visible chat keeps the original image and question.
 - **Intent-aware prompts** — send an image *with a question* and the description is generated from your own words.
 - **`vision_describe` tool** — the model can answer a later follow-up question when the automatic description lacks the requested detail.
 - **Right-side panel** — configure endpoint / model / key, test the connection, watch one latest description per image with thumbnails (2s auto-refresh), read remaining balance.
@@ -45,8 +49,8 @@ Restart `dsh web`, then:
 ## How it works
 
 ```
-image in composer → gateway admits it (DeepSeek (Vision)) → agent/pre-step intercepts
-  → readImage → vision API (intent-aware prompt) → "[视觉描述] …" replaces the image block
+image in composer → gateway admits it (DeepSeek (Vision)) → visible message keeps the image
+  → adapter stream → readImage → vision API → "[视觉描述] …" in the private model request only
   → text-only model answers → /vision-bridge/recent → panel thumbnail + description (2s poll)
 ```
 
@@ -56,10 +60,12 @@ Unconfigured or failed calls degrade to a `[视觉描述失败] <reason>` placeh
 
 ```
 src/
-  index.ts      host plugin: pre-step interception + vision_describe + HTTP routes
+  index.ts      host plugin: vision orchestration + vision_describe + HTTP routes
   vision.ts     OpenAI-compatible vision calls (describe / test / balance)
+  model-messages.ts  model-bound image rewrite + per-attachment cache
+  description-policy.ts  intent-first prompt + low-information retry
   config.ts     settings namespace `vision-bridge` + schema
-  adapter.ts    deepseek-vision wrapper adapter (image-intake enabler)
+  adapter.ts    deepseek-vision wrapper adapter (admission + private rewrite boundary)
   client/       browser half: panel / sidebar toggle / tool card / locales / css
 cordis.patch.yml  bundle patch layer
 ```

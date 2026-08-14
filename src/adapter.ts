@@ -7,9 +7,10 @@
  * blocks. This adapter is registered for the separate `deepseek-vision`
  * provider route: it advertises the underlying deepseek models with `image`
  * added to `inputModalities` (gateway admission), and delegates every stream
- * to the real `deepseek-official` adapter after rewriting any surviving image
- * block into a text placeholder (defensive layer; the pre-step interception
- * in index.ts is the primary rewrite path). The user selects provider
+ * to the real `deepseek-official` adapter after asynchronously rewriting image
+ * blocks in a model-bound copy. Durable session messages keep their original
+ * image blocks, so the chat surface remains faithful to what the user sent.
+ * The user selects provider
  * "DeepSeek (Vision)" in the Web model picker to enable the bridge.
  * @module dsh-visual-plugin/adapter
  */
@@ -18,7 +19,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import {
   LlmAdapter,
   type GenerateOptions,
-  type ImageBlock,
   type LlmModelInfo,
   type LlmResolvedModelInfo,
   type Message,
@@ -32,20 +32,29 @@ export const VISION_PROVIDER = 'deepseek-vision'
 /** The provider route owned by the shipped deepseek adapter. */
 const UNDERLYING_PROVIDER = 'deepseek-official'
 
+/** Async image rewrite performed only for the delegated model request. */
+export type VisionMessageRewriter = (
+  messages: readonly Message[],
+  signal?: AbortSignal,
+) => Promise<readonly Message[]>
+
 /**
  * Register the wrapper adapter for {@link VISION_PROVIDER} when the llm seam
  * is present. The registration is effect-bound and disposes with the fiber.
  * @param ctx - plugin context.
  */
-export function registerVisionAdapter(ctx: Context): void {
+export function registerVisionAdapter(ctx: Context, rewrite: VisionMessageRewriter): void {
   const llm = ctx.get('llm')
   if (llm === undefined) return
-  llm.registerAdapter([VISION_PROVIDER], new VisionBridgeAdapter(ctx))
+  llm.registerAdapter([VISION_PROVIDER], new VisionBridgeAdapter(ctx, rewrite))
 }
 
 /** The wrapper: image-input admission plus delegated deepseek streaming. */
 class VisionBridgeAdapter extends LlmAdapter {
-  constructor(private readonly ctx: Context) {
+  constructor(
+    private readonly ctx: Context,
+    private readonly rewrite: VisionMessageRewriter,
+  ) {
     super()
   }
 
@@ -75,29 +84,10 @@ class VisionBridgeAdapter extends LlmAdapter {
   }
 
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    const rewritten = rewriteImageBlocks(options.messages)
+    const rewritten = await this.rewrite(options.messages, options.signal)
     const delegated: GenerateOptions = rewritten === options.messages
       ? { ...options, provider: UNDERLYING_PROVIDER }
       : { ...options, provider: UNDERLYING_PROVIDER, messages: rewritten as Message[] }
     yield* this.ctx.llm.stream(delegated)
   }
-}
-
-/** Replace every image block with a text placeholder the model can act on. */
-function rewriteImageBlocks(messages: readonly Message[]): readonly Message[] {
-  let changed = false
-  const rewritten = messages.map((message) => {
-    if (!message.content.some(block => block.type === 'image')) return message
-    changed = true
-    return {
-      ...message,
-      content: message.content.map((block) => block.type === 'image'
-        ? {
-            type: 'text' as const,
-            text: `<image attachmentId="${(block as ImageBlock).attachment.attachmentId}">`,
-          }
-        : block),
-    }
-  })
-  return changed ? rewritten : messages
 }

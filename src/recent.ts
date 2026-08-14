@@ -8,7 +8,7 @@ export interface RecentEntry {
 /**
  * Record the newest description for an attachment.
  *
- * The automatic pre-step bridge and the explicit follow-up tool can both
+ * The automatic adapter bridge and the explicit follow-up tool can both
  * describe the same image. The panel models its history as one card per
  * attachment, so replace any previous rows before inserting the newest one.
  */
