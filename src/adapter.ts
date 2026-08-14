@@ -54,7 +54,9 @@ class VisionBridgeAdapter extends LlmAdapter {
   }
 
   override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
-    return this.ctx.llm.listModels(UNDERLYING_PROVIDER)
+    return this.ctx.llm.listModels(UNDERLYING_PROVIDER).then(models =>
+      models.map(model => ({ ...model, provider })),
+    )
   }
 
   override resolveModel(
@@ -64,6 +66,10 @@ class VisionBridgeAdapter extends LlmAdapter {
   ): Promise<LlmResolvedModelInfo> {
     return this.ctx.llm.resolveModelInfo(UNDERLYING_PROVIDER, model, signal).then(info => ({
       ...info,
+      // The delegated metadata carries the underlying route's provider id;
+      // this wrapper owns the `deepseek-vision` route, so rebrand it (the
+      // runtime rejects metadata whose provider does not match the route).
+      provider,
       inputModalities: [...(info.inputModalities ?? []), 'image'],
     }))
   }
