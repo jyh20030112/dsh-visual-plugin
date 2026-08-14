@@ -3,18 +3,26 @@
   flex-direction: column;
   gap: 4px;
   padding: 8px 12px;
-  border-left: 3px solid var(--color-accent, #4d6bfe);
-  background: var(--color-bg-2, #1c1f26);
+  border-left: 3px solid var(--dsw-alias-state-business-primary, #4d6bfe);
+  background: var(--dsw-alias-bg-module-platform, #f5f6f7);
   border-radius: 6px;
+  color: var(--dsw-alias-label-primary, inherit);
 }
 
 .running {
-  border-left-color: var(--color-warning, #d8a300);
+  border-left-color: var(--dsw-alias-state-warn-primary, #d8a300);
 }
 
 .failed,
 .interrupted {
-  border-left-color: var(--color-danger, #e05252);
+  border-left-color: var(--dsw-alias-state-error-primary, #e05252);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .running .label::after {

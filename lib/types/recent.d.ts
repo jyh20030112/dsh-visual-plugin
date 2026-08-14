@@ -1,14 +1,27 @@
-/** One recent bridge activity row for the web panel's history feed. */
+/** One completed description for an image. */
+export interface RecentDescription {
+    time: number;
+    description: string;
+}
+/** One image group in the recent panel, newest-updated image first. */
 export interface RecentEntry {
+    attachmentId: string;
+    sessionId?: string;
+    updatedAt: number;
+    descriptions: RecentDescription[];
+}
+/** Input produced by one completed automatic or explicit vision call. */
+export interface RecentDescriptionInput {
     time: number;
     attachmentId: string;
+    sessionId?: string;
     description: string;
 }
 /**
- * Record the newest description for an attachment.
+ * Retain a completed description under its image group.
  *
- * The automatic adapter bridge and the explicit follow-up tool can both
- * describe the same image. The panel models its history as one card per
- * attachment, so replace any previous rows before inserting the newest one.
+ * Re-describing an image moves that image to the front, exposes the new answer
+ * as its latest description, and retains the older intent-specific answers in
+ * that same group. Both image groups and per-image descriptions are bounded.
  */
-export declare function upsertRecent(recent: RecentEntry[], entry: RecentEntry, maxEntries: number): void;
+export declare function recordRecent(recent: RecentEntry[], entry: RecentDescriptionInput, maxImages: number, maxDescriptionsPerImage: number): void;

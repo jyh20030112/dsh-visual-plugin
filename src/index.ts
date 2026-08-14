@@ -25,7 +25,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import { DEFAULT_API_KEY_ENV, NS, VisionBridgeConfig, type VisionBridgeConfigValue } from './config.ts'
 import { describeImage, queryBalance, testConnection } from './vision.ts'
 import { registerVisionAdapter } from './adapter.ts'
-import { upsertRecent, type RecentEntry } from './recent.ts'
+import { recordRecent, type RecentEntry } from './recent.ts'
 import { describeWithLowInformationRetry } from './description-policy.ts'
 import { ModelImageBridge } from './model-messages.ts'
 import { isSameTurnAttachmentToolCall } from './turn-guard.ts'
@@ -58,7 +58,8 @@ export function apply(ctx: Context): void {
   // The panel polls this through /vision-bridge/recent instead of scanning
   // session logs; the entries are presentation-only and never model-visible.
   const recent: RecentEntry[] = []
-  const MAX_RECENT = 20
+  const MAX_RECENT_IMAGES = 20
+  const MAX_DESCRIPTIONS_PER_IMAGE = 20
   const activities = new VisionActivityStore()
 
   const settings = ctx.get('settings')!
@@ -137,11 +138,12 @@ export function apply(ctx: Context): void {
       activities.start(entry, entry.sessionId === undefined ? undefined : activeTurn(entry.sessionId))
     },
     onDescription(entry) {
-      upsertRecent(recent, {
+      recordRecent(recent, {
         time: Date.now(),
         attachmentId: entry.attachmentId,
+        sessionId: entry.sessionId,
         description: entry.description,
-      }, MAX_RECENT)
+      }, MAX_RECENT_IMAGES, MAX_DESCRIPTIONS_PER_IMAGE)
       activities.complete(entry)
     },
     onFailure(entry) {
@@ -198,11 +200,12 @@ export function apply(ctx: Context): void {
         args.prompt,
         exec.signal,
       )
-      upsertRecent(recent, {
+      recordRecent(recent, {
         time: Date.now(),
         attachmentId: String(ref.attachmentId),
+        sessionId: exec.agent === undefined ? undefined : String(exec.agent.session.id),
         description: result.description,
-      }, MAX_RECENT)
+      }, MAX_RECENT_IMAGES, MAX_DESCRIPTIONS_PER_IMAGE)
       return { description: result.description }
     },
   }))

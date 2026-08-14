@@ -8,6 +8,7 @@
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { DescriptionCopyButton } from './DescriptionCopyButton.tsx'
 import css from './VisionDescribeCard.module.css'
 
 /** Injected business face of the tool card entry. */
@@ -28,15 +29,19 @@ export interface VisionDescriptionCardProps {
   status: VisionDescriptionCardStatus
   text: string
   label: string
+  t: PropsLocale<'vision-bridge'>['t']
 }
 
 /** One visual treatment for every description path. */
 export function VisionDescriptionCard({
-  status, text, label,
+  status, text, label, t,
 }: VisionDescriptionCardProps): JSX.Element {
   return (
     <div className={`${css.card} ${css[status]}`} data-vision-description-status={status}>
-      <span className={css.label}>{label}</span>
+      <div className={css.cardHeader}>
+        <span className={css.label}>{label}</span>
+        {status === 'completed' && <DescriptionCopyButton text={text} t={t} />}
+      </div>
       <p className={css.text}>{text}</p>
     </div>
   )
@@ -60,7 +65,7 @@ function descriptionOf(content: readonly ContentBlock[]): string {
 export function VisionDescribeCard(props: VisionDescribeCardProps): JSX.Element | null {
   const { block, t } = props
   if (!('kind' in block)) {
-    return <VisionDescriptionCard status="running" label={t('panel.title')} text={t('status.describing')} />
+    return <VisionDescriptionCard status="running" label={t('panel.title')} text={t('status.describing')} t={t} />
   }
   if (block.kind !== 'tool-result') return null
   const description = descriptionOf(block.content)
@@ -69,5 +74,6 @@ export function VisionDescribeCard(props: VisionDescribeCardProps): JSX.Element 
     status={failed ? 'failed' : 'completed'}
     label={t('panel.title')}
     text={failed ? t('status.describeFail', { message: description }) : description}
+    t={t}
   />
 }

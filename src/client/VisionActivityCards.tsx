@@ -76,6 +76,7 @@ function ActivityList({
           status={cardStatus(entry)}
           label={t('panel.title')}
           text={cardText(entry, t)}
+          t={t}
         />
       ))}
     </div>

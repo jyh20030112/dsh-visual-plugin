@@ -17,6 +17,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-runtime/client'
 import type { VisionBalanceResult, VisionTestResult } from '../vision.ts'
 import { createVisionBridgeStore } from './store.ts'
+import { DescriptionCopyButton } from './DescriptionCopyButton.tsx'
 import css from './VisionBridgePanel.module.css'
 
 const NS = 'vision-bridge'
@@ -32,12 +33,21 @@ export interface VisionBridgePanelInjected {
   api: IApiClient | undefined
 }
 
-/** One recent bridge activity row served by /vision-bridge/recent. */
-interface RecentEntry {
+/** One retained description inside an image's history. */
+interface RecentDescription {
   time: number
-  attachmentId: string
   description: string
 }
+
+/** One image group served by /vision-bridge/recent. */
+interface RecentEntry {
+  attachmentId: string
+  sessionId?: string
+  updatedAt: number
+  descriptions: RecentDescription[]
+}
+
+type PanelView = 'config' | 'recent'
 
 /** Composed props of the `shell.overlay` entry. */
 export type VisionBridgePanelProps =
@@ -55,6 +65,7 @@ export function VisionBridgePanel(props: VisionBridgePanelProps): JSX.Element | 
   const open = useStore(s => s.open)
   const sessions = useSessions(s => s)
   const sessionId = sessions.current
+  const [view, setView] = useState<PanelView>('config')
 
   // Config form state.
   const [url, setUrl] = useState('')
@@ -70,6 +81,7 @@ export function VisionBridgePanel(props: VisionBridgePanelProps): JSX.Element | 
   const [balance, setBalance] = useState<VisionBalanceResult | null>(null)
   const [history, setHistory] = useState<RecentEntry[]>([])
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
+  const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({})
 
   /** Load the stored config and key state from the host config route. */
   const loadConfig = useCallback(async (): Promise<void> => {
@@ -142,9 +154,13 @@ export function VisionBridgePanel(props: VisionBridgePanelProps): JSX.Element | 
   }, [])
 
   /** Resolve one attachment's bytes for thumbnail display through the session seam. */
-  const loadThumbnail = useCallback(async (attachmentId: string): Promise<void> => {
-    if (api === undefined || sessionId === undefined) return
-    const result = await api.sessions.attachment({ sessionId, attachmentId: attachmentId as AttachmentIdType })
+  const loadThumbnail = useCallback(async (attachmentId: string, ownerSessionId?: string): Promise<void> => {
+    const resolvedSessionId = ownerSessionId ?? sessionId
+    if (api === undefined || resolvedSessionId === undefined) return
+    const result = await api.sessions.attachment({
+      sessionId: resolvedSessionId,
+      attachmentId: attachmentId as AttachmentIdType,
+    })
     const value = resultValue(result)
     if (value !== undefined) {
       setThumbnails(prev => ({
@@ -164,90 +180,224 @@ export function VisionBridgePanel(props: VisionBridgePanelProps): JSX.Element | 
     return () => clearInterval(timer)
   }, [open, loadConfig, refresh])
 
+  // Load every visible image so a long recent list remains useful while the
+  // panel's content viewport handles vertical scrolling.
+  useEffect(() => {
+    if (!open) return
+    for (const entry of history) {
+      if (thumbnails[entry.attachmentId] === undefined) {
+        void loadThumbnail(entry.attachmentId, entry.sessionId)
+      }
+    }
+  }, [history, loadThumbnail, open, thumbnails])
+
   if (!open) return null
 
   return (
     <div className={css.panel} role="dialog" aria-label={t('panel.title')}>
       <header className={css.header}>
-        <span className={css.title}>{t('panel.title')}</span>
-        <button type="button" className={css.close} onClick={actions.close} aria-label={t('panel.title')}>✕</button>
-      </header>
-      <p className={css.hint}>{t('panel.hint')}</p>
-
-      <section className={css.section}>
-        <label className={css.field}>
-          <span>{t('field.url')}</span>
-          <input value={url} onChange={e => setUrl(e.target.value)} placeholder={t('field.url.placeholder')} />
-        </label>
-        <label className={css.field}>
-          <span>{t('field.model')}</span>
-          <input value={model} onChange={e => setModel(e.target.value)} placeholder={t('field.model.placeholder')} />
-        </label>
-        <label className={css.field}>
-          <span>{t('field.apiKey')}</span>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
-            placeholder={keyConfigured ? t('status.keyConfigured') : t('status.keyMissing')}
-          />
-        </label>
-        <div className={css.actions}>
-          <button type="button" onClick={() => void save()} disabled={api === undefined}>{t('action.save')}</button>
-          <button
-            type="button"
-            onClick={() => void testConnection()}
-            disabled={testing || url.length === 0 || model.length === 0}
-          >
-            {testing ? t('status.testing') : t('action.test')}
-          </button>
-          <button type="button" onClick={() => void refresh()}>{t('action.refresh')}</button>
+        <div>
+          <span className={css.title}>{t('panel.title')}</span>
+          <p className={css.headerHint}>{t('panel.shortHint')}</p>
         </div>
-        {saved && <p className={css.note}>{t('status.saved')}</p>}
-        {!configured && <p className={css.note}>{t('status.notConfigured')}</p>}
-        {testResult !== null && (
-          <p className={testResult.ok ? css.ok : css.error}>
-            {testResult.ok
-              ? t('status.testOk', { latency: String(testResult.latencyMs ?? 0) })
-              : t('status.testFail', { message: testResult.error?.message ?? 'unknown' })}
-          </p>
-        )}
-      </section>
+        <button type="button" className={css.close} onClick={actions.close} aria-label={t('action.close')}>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" /></svg>
+        </button>
+      </header>
 
-      <section className={css.section}>
-        <h2 className={css.subtitle}>{t('balance.title')}</h2>
-        {balance === null && <p className={css.note}>{t('action.refresh')}…</p>}
-        {balance !== null && !balance.supported && (
-          <p className={css.note}>
-            {balance.error !== undefined ? t('balance.unavailable', { message: balance.error.message }) : t('balance.unsupported')}
-          </p>
-        )}
-        {balance !== null && balance.supported && (balance.lines ?? []).map((line, index) => (
-          <p key={`${line.currency}-${index}`} className={css.note}>
-            {t('balance.line', { currency: line.currency, available: String(line.available), total: String(line.total) })}
-          </p>
-        ))}
-      </section>
+      <nav className={css.tabs} role="tablist" aria-label={t('panel.title')}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'config'}
+          className={view === 'config' ? css.tabActive : css.tab}
+          onClick={() => { setView('config') }}
+        >
+          {t('tab.config')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'recent'}
+          className={view === 'recent' ? css.tabActive : css.tab}
+          onClick={() => { setView('recent') }}
+        >
+          {t('tab.recent')}
+          {history.length > 0 && <span className={css.tabDot} aria-hidden="true" />}
+        </button>
+      </nav>
 
-      <section className={css.section}>
-        <h2 className={css.subtitle}>{t('history.title')}</h2>
-        {history.length === 0 && <p className={css.note}>{t('history.empty')}</p>}
-        {history.map((entry) => (
-          <article key={entry.attachmentId} className={css.entry}>
-            {thumbnails[entry.attachmentId] === undefined
-              ? (
-                  <button type="button" className={css.thumbPlaceholder} onClick={() => void loadThumbnail(entry.attachmentId)}>
-                    img
-                  </button>
-                )
-              : <img className={css.thumb} src={thumbnails[entry.attachmentId]} alt="" />}
-            <div className={css.entryBody}>
-              <p className={css.description}>{entry.description}</p>
-              <p className={css.meta}>{t('history.attachments', { id: entry.attachmentId })}</p>
+      <div className={css.content}>
+        {view === 'config' && (
+          <div role="tabpanel" className={css.view}>
+            <section className={css.intro}>
+              <span className={configured ? css.statusReady : css.statusPending}>
+                {configured ? t('status.configured') : t('status.notConfigured')}
+              </span>
+              <p className={css.hint}>{t('panel.hint')}</p>
+            </section>
+
+            <section className={css.card}>
+              <div className={css.sectionHeading}>
+                <h2 className={css.subtitle}>{t('config.title')}</h2>
+                <span>{t('config.securityHint')}</span>
+              </div>
+              <label className={css.field}>
+                <span>{t('field.url')}</span>
+                <input value={url} onChange={e => setUrl(e.target.value)} placeholder={t('field.url.placeholder')} />
+              </label>
+              <label className={css.field}>
+                <span>{t('field.model')}</span>
+                <input value={model} onChange={e => setModel(e.target.value)} placeholder={t('field.model.placeholder')} />
+              </label>
+              <label className={css.field}>
+                <span>{t('field.apiKey')}</span>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={e => setApiKey(e.target.value)}
+                  placeholder={keyConfigured ? t('status.keyConfigured') : t('status.keyMissing')}
+                />
+              </label>
+              <div className={css.actions}>
+                <button type="button" className={css.primaryAction} onClick={() => void save()} disabled={api === undefined}>
+                  {t('action.save')}
+                </button>
+                <button
+                  type="button"
+                  className={css.secondaryAction}
+                  onClick={() => void testConnection()}
+                  disabled={testing || url.length === 0 || model.length === 0}
+                >
+                  {testing ? t('status.testing') : t('action.test')}
+                </button>
+              </div>
+              {saved && <p className={css.ok}>{t('status.saved')}</p>}
+              {testResult !== null && (
+                <p className={testResult.ok ? css.ok : css.error}>
+                  {testResult.ok
+                    ? t('status.testOk', { latency: String(testResult.latencyMs ?? 0) })
+                    : t('status.testFail', { message: testResult.error?.message ?? 'unknown' })}
+                </p>
+              )}
+            </section>
+
+            <section className={css.card}>
+              <div className={css.sectionHeading}>
+                <h2 className={css.subtitle}>{t('balance.title')}</h2>
+                <button type="button" className={css.textAction} onClick={() => void refresh()}>{t('action.refresh')}</button>
+              </div>
+              {balance === null && <p className={css.note}>{t('status.loading')}</p>}
+              {balance !== null && !balance.supported && (
+                <p className={css.note}>
+                  {balance.error !== undefined ? t('balance.unavailable', { message: balance.error.message }) : t('balance.unsupported')}
+                </p>
+              )}
+              {balance !== null && balance.supported && (balance.lines ?? []).map((line, index) => (
+                <p key={`${line.currency}-${index}`} className={css.balanceLine}>
+                  {t('balance.line', { currency: line.currency, available: String(line.available), total: String(line.total) })}
+                </p>
+              ))}
+            </section>
+          </div>
+        )}
+
+        {view === 'recent' && (
+          <section role="tabpanel" className={css.view}>
+            <div className={css.recentHeading}>
+              <div>
+                <h2 className={css.subtitle}>{t('history.title')}</h2>
+                <p>{t('history.latestHint')}</p>
+              </div>
+              <button type="button" className={css.textAction} onClick={() => void refresh()}>{t('action.refresh')}</button>
             </div>
-          </article>
-        ))}
-      </section>
+
+            {history.length === 0
+              ? (
+                  <div className={css.empty}>
+                    <div className={css.emptyIcon} aria-hidden="true">
+                      <svg viewBox="0 0 24 24"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z" /><circle cx="9" cy="9" r="1.5" /><path d="m5 17 4.5-4.5 3.2 3.2 2-2L20 19" /></svg>
+                    </div>
+                    <h3>{t('history.emptyTitle')}</h3>
+                    <p>{t('history.empty')}</p>
+                  </div>
+                )
+              : (
+                  <div className={css.recentList}>
+                    {history.map((entry) => {
+                      const latest = entry.descriptions[0]
+                      if (latest === undefined) return null
+                      const older = entry.descriptions.slice(1)
+                      const expanded = expandedHistory[entry.attachmentId] === true
+                      return (
+                        <article key={entry.attachmentId} className={css.entry}>
+                          <div className={css.preview}>
+                            {thumbnails[entry.attachmentId] === undefined
+                              ? (
+                                  <button
+                                    type="button"
+                                    className={css.previewPlaceholder}
+                                    onClick={() => void loadThumbnail(entry.attachmentId, entry.sessionId)}
+                                  >
+                                    {t('history.loadPreview')}
+                                  </button>
+                                )
+                              : <img className={css.thumb} src={thumbnails[entry.attachmentId]} alt={t('history.previewAlt')} />}
+                          </div>
+                          <div className={css.entryBody}>
+                            <div className={css.entryTopline}>
+                              <span className={css.latestBadge}>{t('history.latest')}</span>
+                              <time dateTime={new Date(latest.time).toISOString()}>{new Date(latest.time).toLocaleString()}</time>
+                            </div>
+                            <p className={css.description}>{latest.description}</p>
+                            <footer className={css.entryFooter}>
+                              <p className={css.meta} title={entry.attachmentId}>
+                                {t('history.attachments', { id: entry.attachmentId })}
+                              </p>
+                              <DescriptionCopyButton text={latest.description} t={t} />
+                            </footer>
+                            <button
+                              type="button"
+                              className={expanded ? css.historyToggleExpanded : css.historyToggle}
+                              aria-expanded={expanded}
+                              onClick={() => {
+                                setExpandedHistory(current => ({
+                                  ...current,
+                                  [entry.attachmentId]: !expanded,
+                                }))
+                              }}
+                            >
+                              <span>{expanded
+                                ? t('history.collapse', { count: String(older.length) })
+                                : t('history.expand', { count: String(older.length) })}</span>
+                              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+                            </button>
+                            {expanded && (
+                              <div className={css.historyList}>
+                                {older.length === 0
+                                  ? <p className={css.historyEmpty}>{t('history.noEarlier')}</p>
+                                  : older.map((description, index) => (
+                                      <div key={`${description.time}-${index}`} className={css.historyItem}>
+                                        <div className={css.historyItemHeader}>
+                                          <time dateTime={new Date(description.time).toISOString()}>
+                                            {new Date(description.time).toLocaleString()}
+                                          </time>
+                                          <DescriptionCopyButton text={description.description} t={t} />
+                                        </div>
+                                        <p>{description.description}</p>
+                                      </div>
+                                    ))}
+                              </div>
+                            )}
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                )}
+          </section>
+        )}
+      </div>
     </div>
   )
 }

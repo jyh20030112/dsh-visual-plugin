@@ -2,7 +2,12 @@
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export declare const zh: {
     'panel.title': string;
+    'panel.shortHint': string;
     'panel.hint': string;
+    'tab.config': string;
+    'tab.recent': string;
+    'config.title': string;
+    'config.securityHint': string;
     'field.url': string;
     'field.url.placeholder': string;
     'field.model': string;
@@ -12,10 +17,15 @@ export declare const zh: {
     'action.save': string;
     'action.test': string;
     'action.refresh': string;
+    'action.close': string;
+    'action.copy': string;
+    'action.copyDescription': string;
     'status.saved': string;
     'status.notConfigured': string;
     'status.configured': string;
     'status.testing': string;
+    'status.loading': string;
+    'status.copied': string;
     'status.describing': string;
     'status.describeFail': string;
     'status.interrupted': string;
@@ -28,7 +38,15 @@ export declare const zh: {
     'balance.unavailable': string;
     'balance.line': string;
     'history.title': string;
+    'history.latestHint': string;
+    'history.emptyTitle': string;
     'history.empty': string;
+    'history.latest': string;
+    'history.expand': string;
+    'history.collapse': string;
+    'history.noEarlier': string;
+    'history.loadPreview': string;
+    'history.previewAlt': string;
     'history.attachments': string;
 };
 /** The vision-bridge namespace key union. */

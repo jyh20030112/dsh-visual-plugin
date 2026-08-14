@@ -18,9 +18,10 @@ export interface VisionDescriptionCardProps {
     status: VisionDescriptionCardStatus;
     text: string;
     label: string;
+    t: PropsLocale<'vision-bridge'>['t'];
 }
 /** One visual treatment for every description path. */
-export declare function VisionDescriptionCard({ status, text, label, }: VisionDescriptionCardProps): JSX.Element;
+export declare function VisionDescriptionCard({ status, text, label, t, }: VisionDescriptionCardProps): JSX.Element;
 /**
  * Render one settled `vision_describe` call.
  * @param props - composed props for the keyed Tool slot.
