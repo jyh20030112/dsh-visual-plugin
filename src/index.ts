@@ -3,7 +3,7 @@
  * user-configured OpenAI-compatible vision model when the main model has no
  * vision. Intercepts `agent/pre-step` to replace image blocks with text
  * descriptions before serialization (the main route rejects image content),
- * registers the `vision.describe` tool for follow-up asks, serves the
+ * registers the `vision_describe` tool for follow-up asks, serves the
  * connection-test and balance routes the web panel calls, and registers the
  * `deepseek-vision` wrapper adapter so the gateway admits image uploads.
  * @module dsh-visual-plugin
@@ -154,7 +154,7 @@ export function apply(ctx: Context): void {
   })
 
   ctx.tools.register(defineTool({
-    name: 'vision.describe',
+    name: 'vision_describe',
     description: 'Send one previously attached user image to the configured vision model and return its description. '
       + 'Pass the attachmentId shown in the [视觉描述] block of the user message. The main model has no vision, '
       + 'so this tool is how you answer follow-up questions about a specific image.',
@@ -176,10 +176,10 @@ export function apply(ctx: Context): void {
     timeoutMs: 60_000,
     async execute(args, exec) {
       const ref = refs.get(String(args.attachmentId))
-      if (ref === undefined) throw new Error(`vision.describe: unknown attachment ${args.attachmentId}`)
+      if (ref === undefined) throw new Error(`vision_describe: unknown attachment ${args.attachmentId}`)
       const facts = await resolvedFacts()
-      if (facts === undefined) throw new Error('vision.describe: vision model is not configured')
-      if (attachments === undefined) throw new Error('vision.describe: attachment service is unavailable')
+      if (facts === undefined) throw new Error('vision_describe: vision model is not configured')
+      if (attachments === undefined) throw new Error('vision_describe: attachment service is unavailable')
       const stored = await attachments.readImage(ref, exec.signal)
       const result = await describeImage(
         facts.url,
@@ -204,15 +204,26 @@ export function apply(ctx: Context): void {
       order: 115,
       text: 'The user may attach images. Each attached image is described before it reaches you: '
         + 'you see "[视觉描述] <description>\\n[附件] <attachmentId>" (or "<image attachmentId=\\"…\\">" as a fallback). '
-        + 'To answer a follow-up question about a specific image, call the vision.describe tool with that attachmentId.',
+        + 'To answer a follow-up question about a specific image, call the vision_describe tool with that attachmentId.',
     })
   }
 
   // FR0: admit image uploads by exposing the deepseek-vision provider route.
-  registerVisionAdapter(ctx)
+  // The llm seam may appear after our apply (optional service), so wait for it.
+  const llm = ctx.get('llm')
+  if (llm !== undefined) {
+    registerVisionAdapter(ctx)
+  } else {
+    ctx.inject(['llm'], (scoped) => {
+      registerVisionAdapter(scoped as Context)
+    })
+  }
 
-  if (webServer === undefined) return
-
+  // The panel's HTTP routes. webServer may appear after our apply (it is a
+  // web-surface service, absent from headless/base trees), so register through
+  // the loader's inject when it is not there yet; a tree that never mounts
+  // webServer simply never serves these routes. Every registration is an
+  // effect so reload/teardown removes the route.
   const writeJson = (res: ServerResponse, body: unknown, status = 200): void => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
     res.end(JSON.stringify(body))
@@ -230,47 +241,57 @@ export function apply(ctx: Context): void {
   const stringField = (body: Record<string, unknown>, key: string): string =>
     typeof body[key] === 'string' ? body[key] as string : ''
 
-  webServer.register({
-    kind: 'exact',
-    path: '/vision-bridge/test',
-    async handler(req, res) {
-      const body = await readJsonBody(req)
-      const url = stringField(body, 'url')
-      const model = stringField(body, 'model')
-      const apiKey = stringField(body, 'apiKey')
-      if (url.length === 0 || model.length === 0) {
-        writeJson(res, { ok: false, error: { code: 'CONFIG', message: 'url and model are required' } })
-        return
-      }
-      const key = apiKey.length > 0 ? apiKey : (await resolvedFacts())?.apiKey
-      if (key === undefined) {
-        writeJson(res, { ok: false, error: { code: 'AUTH', message: 'api_key is required' } })
-        return
-      }
-      const result = await testConnection(url, key, model)
-      writeJson(res, result)
-    },
-  })
+  const registerPanelRoutes = (ws: typeof webServer extends undefined ? never : NonNullable<typeof webServer>): void => {
+    ctx.effect(() => ws.register({
+      kind: 'exact',
+      path: '/vision-bridge/test',
+      async handler(req, res) {
+        const body = await readJsonBody(req)
+        const url = stringField(body, 'url')
+        const model = stringField(body, 'model')
+        const apiKey = stringField(body, 'apiKey')
+        if (url.length === 0 || model.length === 0) {
+          writeJson(res, { ok: false, error: { code: 'CONFIG', message: 'url and model are required' } })
+          return
+        }
+        const key = apiKey.length > 0 ? apiKey : (await resolvedFacts())?.apiKey
+        if (key === undefined) {
+          writeJson(res, { ok: false, error: { code: 'AUTH', message: 'api_key is required' } })
+          return
+        }
+        const result = await testConnection(url, key, model)
+        writeJson(res, result)
+      },
+    }), 'vision-bridge: route /vision-bridge/test')
 
-  webServer.register({
-    kind: 'exact',
-    path: '/vision-bridge/balance',
-    async handler(_req, res) {
-      const facts = await resolvedFacts()
-      if (facts === undefined) {
-        writeJson(res, { supported: false, error: { code: 'CONFIG', message: 'vision model is not configured' } })
-        return
-      }
-      const result = await queryBalance(facts.url, facts.apiKey)
-      writeJson(res, result)
-    },
-  })
+    ctx.effect(() => ws.register({
+      kind: 'exact',
+      path: '/vision-bridge/balance',
+      async handler(_req, res) {
+        const facts = await resolvedFacts()
+        if (facts === undefined) {
+          writeJson(res, { supported: false, error: { code: 'CONFIG', message: 'vision model is not configured' } })
+          return
+        }
+        const result = await queryBalance(facts.url, facts.apiKey)
+        writeJson(res, result)
+      },
+    }), 'vision-bridge: route /vision-bridge/balance')
 
-  webServer.register({
-    kind: 'exact',
-    path: '/vision-bridge/recent',
-    async handler(_req, res) {
-      writeJson(res, { entries: recent })
-    },
-  })
+    ctx.effect(() => ws.register({
+      kind: 'exact',
+      path: '/vision-bridge/recent',
+      async handler(_req, res) {
+        writeJson(res, { entries: recent })
+      },
+    }), 'vision-bridge: route /vision-bridge/recent')
+  }
+
+  if (webServer !== undefined) {
+    registerPanelRoutes(webServer)
+  } else {
+    ctx.inject(['webServer'], (scoped) => {
+      registerPanelRoutes(scoped.webServer)
+    })
+  }
 }

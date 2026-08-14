@@ -5,13 +5,13 @@ when the main model has **no vision**, forward user images to a configurable
 OpenAI-compatible vision model and show the results in a Web UI right panel.
 
 - **Host half** — `agent/pre-step` image interception (auto-describes every
-  attached image before it reaches the text-only model), the `vision.describe`
+  attached image before it reaches the text-only model), the `vision_describe`
   tool for follow-up questions, `/vision-bridge/{test,balance,recent}` routes,
   and a `deepseek-vision` wrapper adapter that lets the web gateway admit image
   uploads.
 - **Browser half** — a right-side floating panel (`shell.overlay`) to configure
   `url` / `model` / `api_key`, test the connection, and watch recent image
-  descriptions with thumbnails; a sidebar toggle; and a `vision.describe`
+  descriptions with thumbnails; a sidebar toggle; and a `vision_describe`
   tool card in the conversation.
 
 Distributed as a **publishable dual-half dsh bundle**:
@@ -60,7 +60,7 @@ user pastes/drops an image in the composer
        - failure fallback: "[视觉描述失败] <reason>" (the model keeps going)
   -> the text-only model answers from the description
   -> the panel polls /vision-bridge/recent and shows thumbnail + description
-follow-up: the model calls vision.describe(<attachmentId>) -> new recent entry
+follow-up: the model calls vision_describe(<attachmentId>) -> new recent entry
 ```
 
 API keys never leave the credentials seam; vision calls use
@@ -87,7 +87,7 @@ Prebuilt artifacts (`lib/`) are committed, so consumers do not need to build.
 
 ```
 src/
-  index.ts          host plugin: pre-step interception + vision.describe + routes
+  index.ts          host plugin: pre-step interception + vision_describe + routes
   vision.ts         OpenAI-compatible vision calls (describe/test/balance)
   config.ts         settings namespace `vision-bridge` + schema
   adapter.ts        FR0 wrapper adapter: deepseek-vision route (image intake)

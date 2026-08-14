@@ -1,7 +1,7 @@
 /**
  * Vision bridge web surface, client half. Registers the floating panel
  * (`shell.overlay`), its sidebar toggle (`sidebar.footer.action`), and the
- * `vision.describe` tool card (`tool.call.toolview`), all sharing one
+ * `vision_describe` tool card (`tool.call.toolview`), all sharing one
  * open/closed store seat. The host half (`../index.ts`) owns image
  * interception, the tool, and the HTTP routes.
  * @module dsh-visual-plugin/client
@@ -36,7 +36,7 @@ export const inject = ['slots', 'connection', 'locale']
 
 /**
  * Client plugin body: register the floating panel, its sidebar toggle, and
- * the `vision.describe` tool card.
+ * the `vision_describe` tool card.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -64,7 +64,7 @@ export function apply(ctx: ClientContext): void {
 
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
     name: 'tool.call.toolview',
-    key: 'vision.describe',
+    key: 'vision_describe',
     locale: NS,
   }, VisionDescribeCard))
 }

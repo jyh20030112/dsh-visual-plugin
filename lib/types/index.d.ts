@@ -3,7 +3,7 @@
  * user-configured OpenAI-compatible vision model when the main model has no
  * vision. Intercepts `agent/pre-step` to replace image blocks with text
  * descriptions before serialization (the main route rejects image content),
- * registers the `vision.describe` tool for follow-up asks, serves the
+ * registers the `vision_describe` tool for follow-up asks, serves the
  * connection-test and balance routes the web panel calls, and registers the
  * `deepseek-vision` wrapper adapter so the gateway admits image uploads.
  * @module dsh-visual-plugin

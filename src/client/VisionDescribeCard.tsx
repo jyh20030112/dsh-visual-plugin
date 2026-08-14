@@ -1,5 +1,5 @@
 /**
- * `vision.describe` tool card: a compact settled-state row showing the
+ * `vision_describe` tool card: a compact settled-state row showing the
  * returned image description. Reads only the frozen call block from the
  * keyed Tool slot; no host round-trip is needed for display.
  * @module dsh-visual-plugin/client/VisionDescribeCard
@@ -32,7 +32,7 @@ function descriptionOf(content: readonly ContentBlock[]): string {
 }
 
 /**
- * Render one settled `vision.describe` call.
+ * Render one settled `vision_describe` call.
  * @param props - composed props for the keyed Tool slot.
  */
 export function VisionDescribeCard(props: VisionDescribeCardProps): JSX.Element | null {
