@@ -232,6 +232,59 @@ export function apply(ctx: Context): void {
     typeof body[key] === 'string' ? body[key] as string : ''
 
   const registerPanelRoutes = (ws: typeof webServer extends undefined ? never : NonNullable<typeof webServer>): void => {
+    // The settings seam's web gateway only exposes in-repo allowlisted
+    // namespaces ('settings-not-exposed' otherwise), so the panel reads and
+    // writes the bridge config through these same-origin routes instead of
+    // the settings/credentials RPCs. The api key is stored through the host
+    // credentials seam (write-only; never returned, only a configured flag).
+    const configView = async (): Promise<{ url: string; model: string; apiKeyEnv: string; keyConfigured: boolean }> => {
+      const value = scope.get()
+      const apiKeyEnv = value.apiKeyEnv || DEFAULT_API_KEY_ENV
+      let keyConfigured = false
+      try {
+        keyConfigured = (await credentials.describe(credentialRef(apiKeyEnv))).configured
+      } catch {
+        keyConfigured = false
+      }
+      return { url: value.url, model: value.model, apiKeyEnv, keyConfigured }
+    }
+
+    ctx.effect(() => ws.register({
+      kind: 'exact',
+      path: '/vision-bridge/config',
+      async handler(req, res) {
+        if (req.method === 'GET') {
+          writeJson(res, { ok: true, config: await configView() })
+          return
+        }
+        if (req.method !== 'POST') {
+          writeJson(res, { ok: false, error: { code: 'HTTP', message: 'method not allowed' } }, 405)
+          return
+        }
+        const body = await readJsonBody(req)
+        const url = stringField(body, 'url')
+        const model = stringField(body, 'model')
+        const apiKey = stringField(body, 'apiKey')
+        if (url.length === 0 || model.length === 0) {
+          writeJson(res, { ok: false, error: { code: 'CONFIG', message: 'url and model are required' } })
+          return
+        }
+        try {
+          await scope.update({ url, model })
+          const apiKeyEnv = scope.get().apiKeyEnv || DEFAULT_API_KEY_ENV
+          if (apiKey.length > 0) {
+            await credentials.set(credentialRef(apiKeyEnv), apiKey)
+          }
+          writeJson(res, { ok: true, config: await configView() })
+        } catch (error) {
+          writeJson(res, {
+            ok: false,
+            error: { code: 'CONFIG', message: error instanceof Error ? error.message : String(error) },
+          })
+        }
+      },
+    }), 'vision-bridge: route /vision-bridge/config')
+
     ctx.effect(() => ws.register({
       kind: 'exact',
       path: '/vision-bridge/test',

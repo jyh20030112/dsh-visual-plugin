@@ -16,7 +16,6 @@ import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepsee
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-runtime/client'
 import type { VisionBalanceResult, VisionTestResult } from '../vision.ts'
-import type { VisionBridgeConfigValue } from '../config.ts'
 import { createVisionBridgeStore } from './store.ts'
 import css from './VisionBridgePanel.module.css'
 
@@ -72,45 +71,40 @@ export function VisionBridgePanel(props: VisionBridgePanelProps): JSX.Element | 
   const [history, setHistory] = useState<RecentEntry[]>([])
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
 
-  /** Load the stored config and key state from the connection seams. */
+  /** Load the stored config and key state from the host config route. */
   const loadConfig = useCallback(async (): Promise<void> => {
-    if (api === undefined) return
-    const describe = await api.settings.describe({})
-    const value = resultValue(describe)
-    if (value === undefined) return
-    const section = value.namespaces.find(ns => ns.ns === NS)
-    const sectionValue = (section?.value ?? {}) as VisionBridgeConfigValue
-    setUrl(sectionValue?.url ?? '')
-    setModel(sectionValue?.model ?? '')
-    setConfigured((sectionValue?.url?.length ?? 0) > 0 && (sectionValue?.model?.length ?? 0) > 0)
-    const apiKeyEnv = sectionValue?.apiKeyEnv ?? 'VISION_API_KEY'
-    const creds = await api.credentials.describe({ refs: [apiKeyEnv] })
-    const credsValue = resultValue(creds)
-    if (credsValue !== undefined) {
-      setKeyConfigured(credsValue.credentials[apiKeyEnv]?.configured ?? false)
+    try {
+      const response = await fetch('/vision-bridge/config')
+      const body = await response.json() as { ok?: boolean; config?: { url: string; model: string; keyConfigured: boolean } }
+      if (body.ok !== true || body.config === undefined) return
+      setUrl(body.config.url ?? '')
+      setModel(body.config.model ?? '')
+      setConfigured((body.config.url?.length ?? 0) > 0 && (body.config.model?.length ?? 0) > 0)
+      setKeyConfigured(body.config.keyConfigured ?? false)
+    } catch {
+      // Config route unavailable (host half absent) — leave the form empty.
     }
-  }, [api])
+  }, [])
 
-  /** Save the form: url/model through settings, the key through credentials. */
+  /** Save the form: url/model plus an optional new key through the host config route. */
   const save = useCallback(async (): Promise<void> => {
-    if (api === undefined) return
-    const describe = await api.settings.describe({})
-    const value = resultValue(describe)
-    const sectionValue = (value?.namespaces.find(ns => ns.ns === NS)?.value ?? {}) as VisionBridgeConfigValue
-    const apiKeyEnv = sectionValue.apiKeyEnv || 'VISION_API_KEY'
-    const updated = await api.settings.update({ ns: NS, patch: { url, model } })
-    if (resultValue(updated) !== undefined) {
-      setConfigured(url.length > 0 && model.length > 0)
-      setSaved(true)
-    }
-    if (apiKey.length > 0) {
-      const stored = await api.credentials.set({ ref: apiKeyEnv, value: apiKey })
-      if (resultValue(stored) !== undefined) {
-        setKeyConfigured(true)
-        setApiKey('')
+    try {
+      const response = await fetch('/vision-bridge/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, model, apiKey }),
+      })
+      const body = await response.json() as { ok?: boolean; config?: { keyConfigured: boolean } }
+      if (body.ok === true) {
+        setConfigured(url.length > 0 && model.length > 0)
+        setSaved(true)
+        if (body.config !== undefined) setKeyConfigured(body.config.keyConfigured ?? false)
+        if (apiKey.length > 0) setApiKey('')
       }
+    } catch {
+      // Config route unavailable — nothing to do.
     }
-  }, [api, url, model, apiKey])
+  }, [url, model, apiKey])
 
   /** POST a connection test to the host route. */
   const testConnection = useCallback(async (): Promise<void> => {
