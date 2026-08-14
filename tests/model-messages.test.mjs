@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { serializeMessages } from '../../../deepseek-harness/packages/llm/llm-deepseek/src/serialize.ts'
 import { ModelImageBridge } from '../src/model-messages.ts'
 
 const attachment = {
@@ -94,4 +95,48 @@ test('does not cache failed descriptions', async () => {
   assert.match(failed[0].content[0].text, /temporary failure/)
   assert.match(recovered[0].content[0].text, /recovered description/)
   assert.equal(calls, 2)
+})
+
+test('rewrites read_image output nested inside a tool result before DeepSeek serialization', async () => {
+  const generatedAttachment = {
+    ...attachment,
+    attachmentId: 'sha256:generated-palette',
+    name: 'pastoral-wallpaper-palette.png',
+  }
+  const bridge = new ModelImageBridge({
+    describe: async () => '一张包含七个田园配色样本的横向色板。',
+    onDescription: () => {},
+    failureText: error => error instanceof Error ? error.message : String(error),
+  })
+  const message = {
+    role: 'user',
+    source: { kind: 'tool', callId: 'call-read-image' },
+    content: [{
+      type: 'tool-result',
+      toolCallId: 'call-read-image',
+      content: [
+        { type: 'text', text: '<path>pastoral-wallpaper-palette.png</path>' },
+        { type: 'image', attachment: generatedAttachment },
+      ],
+      isError: false,
+    }],
+  }
+  const original = structuredClone(message)
+
+  assert.throws(
+    () => serializeMessages([message]),
+    /The DeepSeek chat-completions adapter does not support image content/,
+  )
+
+  const rewritten = await bridge.rewrite([message])
+
+  assert.deepEqual(message, original)
+  assert.doesNotThrow(() => serializeMessages(rewritten))
+  assert.deepEqual(rewritten[0].content[0].content, [
+    { type: 'text', text: '<path>pastoral-wallpaper-palette.png</path>' },
+    {
+      type: 'text',
+      text: '[视觉描述] 一张包含七个田园配色样本的横向色板。\n[附件] sha256:generated-palette\n',
+    },
+  ])
 })

@@ -32,5 +32,7 @@ export declare class ModelImageBridge {
     cachedDescription(attachmentId: string): string | undefined;
     /** Build model-bound copies of messages containing image blocks. */
     rewrite(messages: readonly Message[], signal?: AbortSignal): Promise<readonly Message[]>;
+    /** Rewrite images at every core content depth, including read_image tool results. */
+    private rewriteContent;
     private descriptionFor;
 }

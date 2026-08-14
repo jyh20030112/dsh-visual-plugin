@@ -1,5 +1,5 @@
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { ImageBlock, Message } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ImageBlock, Message } from '@deepseek-ai/dsh-llm'
 
 /** Facts needed to describe one model-bound image. */
 export interface ModelImageRequest {
@@ -54,29 +54,57 @@ export class ModelImageBridge {
   async rewrite(messages: readonly Message[], signal?: AbortSignal): Promise<readonly Message[]> {
     let changed = false
     const rewritten = await Promise.all(messages.map(async (message): Promise<Message> => {
-      if (!message.content.some(block => block.type === 'image')) return message
+      const result = await this.rewriteContent(message.content, userTextOf(message), signal)
+      if (!result.changed) return message
       changed = true
-      const userText = userTextOf(message)
-      const content = await Promise.all(message.content.map(async (block) => {
-        if (block.type !== 'image') return block
-        const attachment = (block as ImageBlock).attachment
-        const attachmentId = String(attachment.attachmentId)
-        try {
-          const description = await this.descriptionFor(attachment, userText, signal)
-          return {
-            type: 'text' as const,
-            text: `[视觉描述] ${description}\n[附件] ${attachmentId}\n`,
-          }
-        } catch (error) {
-          return {
-            type: 'text' as const,
-            text: `[视觉描述失败] ${this.options.failureText(error)}\n[附件] ${attachmentId}\n`,
-          }
-        }
-      }))
-      return { ...message, content }
+      return { ...message, content: result.content }
     }))
     return changed ? rewritten : messages
+  }
+
+  /** Rewrite images at every core content depth, including read_image tool results. */
+  private async rewriteContent(
+    content: readonly ContentBlock[],
+    userText: string,
+    signal?: AbortSignal,
+  ): Promise<{ content: ContentBlock[]; changed: boolean }> {
+    const results = await Promise.all(content.map(async (block): Promise<{
+      block: ContentBlock
+      changed: boolean
+    }> => {
+      if (block.type === 'tool-result') {
+        const nested = await this.rewriteContent(block.content, userText, signal)
+        return nested.changed
+          ? { block: { ...block, content: nested.content }, changed: true }
+          : { block, changed: false }
+      }
+      if (block.type !== 'image') return { block, changed: false }
+
+      const attachment = (block as ImageBlock).attachment
+      const attachmentId = String(attachment.attachmentId)
+      try {
+        const description = await this.descriptionFor(attachment, userText, signal)
+        return {
+          block: {
+            type: 'text',
+            text: `[视觉描述] ${description}\n[附件] ${attachmentId}\n`,
+          },
+          changed: true,
+        }
+      } catch (error) {
+        return {
+          block: {
+            type: 'text',
+            text: `[视觉描述失败] ${this.options.failureText(error)}\n[附件] ${attachmentId}\n`,
+          },
+          changed: true,
+        }
+      }
+    }))
+    return {
+      content: results.map(result => result.block),
+      changed: results.some(result => result.changed),
+    }
   }
 
   private async descriptionFor(

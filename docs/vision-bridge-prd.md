@@ -83,7 +83,7 @@
 ### 3.1 核心场景
 
 - **S1 配置**：点击侧栏底部"视觉桥接"开关 → 右侧浮动面板 → 填 `接口地址` / `模型名称` / `API Key`（密码框，仅填一次）→ `保存配置` → `测试连接`（显示延迟或错误码）。
-- **S2 发图自动描述**：输入栏粘贴/上传/拖拽图片 → 发送 → 聊天气泡仍显示原始图片 + 用户原话；adapter 私有请求中主模型收到 `[视觉描述] <text>\n[附件] <id>` 并正常回复；面板"最近描述"出现唯一卡片；当前轮工具调用复用自动描述缓存。
+- **S2 图片自动描述**：输入栏粘贴/上传/拖拽图片，或 `read_image` 等工具结果返回嵌套图片 → 聊天记录仍显示原始内容；adapter 递归改写私有请求中的图片，主模型收到 `[视觉描述] <text>\n[附件] <id>` 并正常回复；面板"最近描述"出现唯一卡片；当前轮工具调用复用自动描述缓存。
 - **S3 追问**：后续轮次询问"图里的报错信息是什么？"且已有描述不足 → 模型调用 `vision_describe(attachmentId)` → 对话中渲染"视觉桥接"结果卡片；面板更新该附件的原记录并置顶。
 - **S4 未配置/失败**：未配置时发图 → 可见消息仍保留原图，模型私有请求降级为 `[视觉描述失败] vision model is not configured (set it in the right-side panel)`，模型不崩溃；API 错误按错误码显示在面板。
 
@@ -100,7 +100,7 @@
 
 ### FR1 Host：图片自动描述（adapter 模型请求边界）
 
-- adapter 收到的模型消息含 `image` 块时触发，durable `user/message` 与聊天 UI 不改写：
+- adapter 收到的模型消息在任意 core content 深度含 `image` 块时触发（包括 `tool-result.content[]`），durable 消息与聊天 UI 不改写：
   1. `resolvedFacts()`：settings（url/model/apiKeyEnv）+ credentials 解析，缺失 → 仅在模型请求副本中替换为失败文案。
   2. `attachments.readImage(ref, signal)` → base64 → `describeImage(url, apiKey, model, data, mediaType, prompt?, signal)`。
   3. 模型请求副本的图片块改写为文本块 `[视觉描述] <text>\n[附件] <attachmentId>`；原始消息保留图片；记录 `attachmentId → ref` 映射（供 `vision_describe`）。
@@ -185,7 +185,7 @@
 - **性能**：单次描述 60s 超时；低信息回答最多重试一次；同附件自动描述跨 step 缓存；`recent` 上限 20；面板按需加载缩略图。
 - **兼容**：OpenAI 兼容 `/chat/completions`；支持多图（逐图描述，每图一次调用）；gif/png/jpeg/webp（与输入栏 MIME 校验一致）。
 - **可发布性**：满足 bundle 规范（`dsh.bundle.patch` → `cordis.patch.yml`）；client 半 `dsh.client.platform:'web'` + `exports["./client"]` + 预构建 `lib/client.js`；`files` 含 `lib/index.js`、`lib/client.js`、`cordis.patch.yml`、`lib/types/**/*.d.ts`；**自备 tsdown.client.ts 协议副本**；react 保持 external。
-- **测试**：host 单测（模型私有副本改写且原消息不变、缓存、低信息重试、同轮工具保护、settings/credentials 解析）、client 组件测试（表单/历史/卡片）、e2e（安装 → 发图 → 可见消息保留原图 → 面板显示 → 追问）。
+- **测试**：host 单测（模型私有副本递归改写且原消息不变、嵌套工具结果图片可通过 DeepSeek 文本序列化、缓存、低信息重试、同轮工具保护、settings/credentials 解析）、client 组件测试（表单/历史/卡片）、e2e（安装 → 发图 → 可见消息保留原图 → 面板显示 → 追问）。
 
 ---
 

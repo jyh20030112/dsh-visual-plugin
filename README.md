@@ -27,7 +27,7 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 ## Features
 
-- **Automatic description** — the wrapper adapter describes images in a model-bound copy while the visible chat keeps the original image and question.
+- **Automatic description** — the wrapper adapter recursively describes uploaded images and image-bearing tool results in a model-bound copy while the visible chat keeps the originals.
 - **Intent-aware prompts** — send an image *with a question* and the description is generated from your own words.
 - **`vision_describe` tool** — the model can answer a later follow-up question when the automatic description lacks the requested detail.
 - **Right-side panel** — configure endpoint / model / key, test the connection, watch one latest description per image with thumbnails (2s auto-refresh), read remaining balance.
@@ -49,7 +49,7 @@ Restart `dsh web`, then:
 ## How it works
 
 ```
-image in composer → gateway admits it (DeepSeek (Vision)) → visible message keeps the image
+image in composer or tool result → wrapper finds it at any content depth → visible message keeps the image
   → adapter stream → readImage → vision API → "[视觉描述] …" in the private model request only
   → text-only model answers → /vision-bridge/recent → panel thumbnail + description (2s poll)
 ```
