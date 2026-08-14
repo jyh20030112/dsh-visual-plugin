@@ -2,6 +2,12 @@
   "name": "dsh-visual-plugin",
   "version": "0.1.0",
   "description": "Vision bridge plugin for DeepSeek Harness: when the main model has no vision, forward user images to a configurable OpenAI-compatible vision model and show results in a Web UI right panel. Host tool + browser half, distributed as a dsh bundle.",
+  "scripts": {
+    "bootstrap": "./scripts/bootstrap.sh",
+    "typecheck": "node node_modules/typescript/bin/tsc -p tsconfig.json",
+    "build": "node node_modules/tsdown/dist/run.mjs",
+    "pack": "npm pack"
+  },
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

@@ -83,6 +83,30 @@ node node_modules/tsdown/dist/run.mjs                    # lib/index.js + lib/cl
 
 Prebuilt artifacts (`lib/`) are committed, so consumers do not need to build.
 
+## Publish (CI/CD)
+
+`.github/workflows/`:
+
+- **ci.yml** — on every push/PR: verifies the committed prebuilt artifacts
+  (`lib/{index,invariant,client}.js`, `lib/types`, `cordis.patch.yml`), the dsh
+  manifest contract, and the `npm pack` tarball contents. No dependency
+  install is needed — the plugin ships prebuilt `lib/`.
+- **release.yml** — on tag `vX.Y.Z` (or manual dispatch): checks
+  `tag == package.json version`, `npm pack`s the tarball, creates/updates the
+  GitHub Release with the tarball, and runs `npm publish` — npm registry is
+  the official dsh plugin distribution channel (`dsh plugin --profile <name> add dsh-visual-plugin`).
+
+First release setup: add an `NPM_TOKEN` secret (npmjs automation token with
+publish permission) under repository **Settings → Secrets → Actions**; add the
+`dsh-plugin` GitHub topic for ecosystem discoverability (already applied here).
+
+Release a new version:
+
+```sh
+# bump version in package.json, rebuild if sources changed (lib/ is committed), then:
+git tag v0.1.0 && git push origin v0.1.0   # triggers release.yml
+```
+
 ## Project layout
 
 ```

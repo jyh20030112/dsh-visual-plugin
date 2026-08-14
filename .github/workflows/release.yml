@@ -1,0 +1,77 @@
+name: release
+
+# CD：打 vX.Y.Z tag（或手动指定）时——
+#   1) 校验 tag 与 package.json version 一致
+#   2) npm pack 出 tarball（使用提交的预构建 lib/，无需在 CI 重建）
+#   3) 创建 GitHub Release 并附带 tarball
+#   4) npm publish 到官方 registry（dsh 的官方插件分发渠道：
+#      用户经 `dsh plugin --profile <name> add dsh-visual-plugin` 安装）
+#
+# 首次使用：在仓库 Settings → Secrets and variables → Actions 添加
+#   NPM_TOKEN（npmjs.com 的自动化 token，需有 publish 权限）。
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag（vX.Y.Z，需已推送到本仓库）'
+        required: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: 解析并校验版本（tag == package.json version）
+        id: ver
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          [ "$TAG" = "$GITHUB_REF" ] && TAG="${{ github.event.inputs.tag }}"
+          if [ -z "$TAG" ]; then echo "未提供 tag"; exit 1; fi
+          V=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "v$V" ]; then
+            echo "tag($TAG) 与 package.json version(v$V) 不一致"; exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: 校验提交的预构建产物
+        run: |
+          test -f lib/index.js
+          test -f lib/invariant.js
+          test -f lib/client.js
+          test -f cordis.patch.yml
+
+      - name: npm pack
+        run: npm pack
+
+      - name: 创建/更新 GitHub Release 并上传 tarball
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TGZ=$(ls dsh-visual-plugin-*.tgz | head -1)
+          TAG="${{ steps.ver.outputs.tag }}"
+          if gh release view "$TAG" --json tagName >/dev/null 2>&1; then
+            gh release upload "$TAG" "$TGZ" --clobber
+          else
+            gh release create "$TAG" "$TGZ" \
+              --title "dsh-visual-plugin ${{ steps.ver.outputs.tag }}" \
+              --generate-notes
+          fi
+          echo "GitHub Release: $TAG ($TGZ)"
+
+      - name: 发布到 npm（官方插件分发渠道）
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

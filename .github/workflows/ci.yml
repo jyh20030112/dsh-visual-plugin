@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 校验提交的预构建产物
+        run: |
+          test -f lib/index.js
+          test -f lib/invariant.js
+          test -f lib/client.js
+          test -f lib/types/index.d.ts
+          test -f cordis.patch.yml
+
+      - name: 校验 dsh 清单（bundle + client 契约）
+        run: node -e "
+          const j = require('./package.json');
+          if (j.dsh?.bundle?.patch !== './cordis.patch.yml') throw new Error('missing dsh.bundle.patch');
+          if (j.dsh?.client?.platform !== 'web') throw new Error('missing dsh.client platform=web');
+          if (!j.exports?.['./client']) throw new Error('missing exports ./client');
+          if (!(j.files ?? []).includes('lib/client.js')) throw new Error('files 缺少 lib/client.js');
+          console.log('dsh manifest OK');
+        "
+
+      - name: 校验 npm pack 内容
+        run: |
+          LIST=$(npm pack --dry-run 2>&1 || true)
+          for f in lib/index.js lib/invariant.js lib/client.js lib/types/index.d.ts cordis.patch.yml; do
+            echo "$LIST" | grep -q "$f" || { echo "tarball 缺少 $f"; exit 1; }
+          done
+          echo "tarball 内容 OK"
