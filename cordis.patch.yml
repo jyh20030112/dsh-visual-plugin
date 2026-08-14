@@ -1,0 +1,9 @@
+# dsh-visual-plugin — publishable dual-half bundle
+#
+# Inserts the vision-bridge plugin row over the profile root. The same package
+# declares `dsh.client`, so the Web runtime's client-modules scanner also serves
+# the browser half (`lib/client.js`) for this row.
+
+- insert:
+    - id: vision-bridge
+      name: dsh-visual-plugin
