@@ -1,131 +1,134 @@
 # dsh-visual-plugin
 
-Vision bridge plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness):
-when the main model has **no vision**, forward user images to a configurable
-OpenAI-compatible vision model and show the results in a Web UI right panel.
+> **Vision bridge for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)** — give your text-only model eyes. When the main model has no vision, user images are forwarded to any OpenAI-compatible vision model, and the results appear in a Web UI right panel.
 
-- **Host half** — `agent/pre-step` image interception (auto-describes every
-  attached image before it reaches the text-only model), the `vision_describe`
-  tool for follow-up questions, `/vision-bridge/{test,balance,recent}` routes,
-  and a `deepseek-vision` wrapper adapter that lets the web gateway admit image
-  uploads.
-- **Browser half** — a right-side floating panel (`shell.overlay`) to configure
-  `url` / `model` / `api_key`, test the connection, and watch recent image
-  descriptions with thumbnails; a sidebar toggle; and a `vision_describe`
-  tool card in the conversation.
+[![npm version](https://img.shields.io/npm/v/dsh-visual-plugin?style=flat-square&logo=npm&label=npm)](https://www.npmjs.com/package/dsh-visual-plugin)
+[![GitHub release](https://img.shields.io/github/v/release/jyh20030112/dsh-visual-plugin?style=flat-square&logo=github&label=release)](https://github.com/jyh20030112/dsh-visual-plugin/releases)
+[![license](https://img.shields.io/npm/l/dsh-visual-plugin?style=flat-square)](LICENSE)
+[![dsh-plugin](https://img.shields.io/badge/dsh-plugin-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/topics/dsh-plugin)
 
-Distributed as a **publishable dual-half dsh bundle**:
-`"dsh": { "bundle": { "patch": "./cordis.patch.yml" }, "client": { "platform": "web" } }`.
+[English](README.md) · [简体中文](README.zh.md)
 
-## Install
+> 🏗 Built on the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin framework — *everything is a plugin*.
+
+---
+
+## ✨ Features
+
+- 🖼️ **Automatic image description** — images sent in the composer are intercepted at `agent/pre-step` and rewritten into `[视觉描述] <description>` text before they reach the text-only model.
+- 💬 **Intent-aware prompts** — when you send an image *with a question*, the description is generated from your own words ("以该意图为重点…"), not a generic template.
+- 🔎 **`vision_describe` tool** — the model can answer follow-up questions about any previously attached image.
+- 🎛️ **Right-side panel** — configure `url` / `model` / `api_key`, test the connection, watch recent descriptions with thumbnails (2s auto-refresh), and read the remaining balance.
+- 🔐 **Secrets stay secret** — the API key is stored through the harness credentials seam (write-only, never echoed, never in settings).
+- 📦 **Publishable dual-half bundle** — one npm package with a host plugin and a browser half (`dsh.bundle` + `dsh.client`), installed with `dsh plugin add`.
+
+## 🚀 Quick start
 
 ```sh
-# from an npm tarball / local checkout
-dsh plugin --profile web add ./dsh-visual-plugin-0.1.0.tgz
-
-# or from a git host (prebuilt lib/ is committed, so no prepare build is needed;
-# pnpm >= 10 still requires an allowBuilds entry only when a prepare script runs)
+# install from npm (the official dsh plugin channel)
+dsh plugin --profile web add dsh-visual-plugin
+# …or from GitHub
 dsh plugin --profile web add github:jyh20030112/dsh-visual-plugin
 ```
 
-Then **restart** `dsh web` (client-package metadata is cached per boot), open the
-Web UI, and click **视觉桥接 / Vision Bridge** in the sidebar footer.
+Then **restart** `dsh web`, open the UI and click **视觉桥接 / Vision Bridge** in the sidebar footer.
 
-## Configure
+### 1. Configure the vision endpoint (in the panel)
 
-In the panel:
+| Field | Example |
+|---|---|
+| 接口地址 Endpoint URL | `https://api.deepseek.com` (any OpenAI-compatible `/chat/completions` base) |
+| 模型名称 Model name | `glm-4v-flash`, `Qwythos`, … (a vision-capable model) |
+| API Key | entered once, stored write-only |
 
-1. **接口地址 / Endpoint URL** — an OpenAI-compatible `/chat/completions` base,
-   e.g. `https://api.deepseek.com` (or a GLM-4V/SiliconFlow/Moonshot endpoint).
-2. **模型名称 / Model name** — a vision-capable model, e.g. `glm-4v-flash`.
-3. **API Key** — entered once, stored through the credentials seam (never in
-   settings, never echoed back).
-4. Click **保存配置** then **测试连接**; a successful test shows latency.
+Click **保存配置** → **测试连接** — a successful test shows latency.
 
-For the **conversation model**, select provider **DeepSeek (Vision)** in the Web
-model picker. That provider route is the wrapper adapter: it advertises image
-input (so uploads are admitted) and delegates every request to the underlying
-`deepseek-official` adapter after rewriting image blocks to text placeholders.
+### 2. Pick the conversation model
 
-## How it works
+Select provider **DeepSeek (Vision)** in the Web model picker. That route is the plugin's wrapper adapter: it declares image input (so the gateway admits uploads) and delegates every request to the underlying `deepseek-official` adapter.
+
+### 3. Send an image
+
+Paste/drop an image (optionally with a question) → the model answers from the generated description, and the panel shows the thumbnail + description within ~2s.
+
+## ⚙️ How it works
+
+```mermaid
+sequenceDiagram
+    participant U as User (Web UI)
+    participant G as Web gateway
+    participant B as vision-bridge (host)
+    participant V as Vision API
+    participant M as Text-only model
+    U->>G: send image (+ optional question)
+    G->>B: user/message with ImageBlock (admitted: DeepSeek (Vision) declares image input)
+    B->>V: readImage + describeImage(intent-aware prompt)
+    V-->>B: description
+    B->>M: image block rewritten to "[视觉描述] …" text
+    M-->>U: answer based on the description
+    B-->>U: /vision-bridge/recent → panel thumbnail + description (2s poll)
+    U->>B: follow-up question → model calls vision_describe(attachmentId)
+```
+
+- API keys never leave the credentials seam; vision calls use `Authorization: Bearer`, `redirect: 'manual'`, a 60s timeout, and a normalized error vocabulary (`AUTH / QUOTA / RATE_LIMIT / TIMEOUT / NETWORK / PROTOCOL / HTTP / CONFIG`).
+- Unconfigured or failed vision calls degrade to a `[视觉描述失败] <reason>` placeholder so the conversation never breaks.
+
+## 🧱 Project layout
 
 ```
-user pastes/drops an image in the composer
-  -> sessions.prompt (gateway admits it: deepseek-vision declares image input)
-  -> user/message carries an ImageBlock (durable attachment id)
-  -> agent/pre-step: vision-bridge intercepts
-       - reads the attachment bytes (ctx.attachments.readImage)
-       - calls the configured vision API (describeImage)
-       - rewrites the block to "[视觉描述] <description>\n[附件] <id>"
-       - failure fallback: "[视觉描述失败] <reason>" (the model keeps going)
-  -> the text-only model answers from the description
-  -> the panel polls /vision-bridge/recent and shows thumbnail + description
-follow-up: the model calls vision_describe(<attachmentId>) -> new recent entry
+src/
+  index.ts        host plugin: pre-step interception + vision_describe + HTTP routes
+  vision.ts       OpenAI-compatible vision calls (describe / test / balance)
+  config.ts       settings namespace `vision-bridge` + schema
+  adapter.ts      deepseek-vision wrapper adapter (image-intake enabler, FR0)
+  invariant.ts    invariant companion
+  client/         browser half: panel / sidebar toggle / tool card / locales / css
+cordis.patch.yml  bundle patch layer (inserts the vision-bridge row)
 ```
 
-API keys never leave the credentials seam; vision calls use
-`Authorization: Bearer`, `redirect: 'manual'`, a 60s timeout, and a normalized
-error vocabulary (`AUTH / QUOTA / RATE_LIMIT / TIMEOUT / NETWORK / PROTOCOL /
-HTTP / CONFIG`).
+## 🛠 Development
 
-## Build from source
+<details>
+<summary>Build from source</summary>
 
-The plugin targets the **current** harness API. The npm-published
-`@deepseek-ai/*` packages are still `0.0.1-rc.1` (older API), so building
-requires a local harness checkout whose packages are installed and built:
+The plugin targets the **current** harness API — the npm-published `@deepseek-ai/*` packages are still `0.0.1-rc.1` (older API), so building requires a local harness checkout whose packages are installed and built:
 
 ```sh
 # layout: <dev>/deepseek_workspace/dsh-visual-plugin + <dev>/deepseek-harness
-./scripts/bootstrap.sh     # symlink node_modules to the harness dependency tree
-node node_modules/typescript/bin/tsc -p tsconfig.json    # lib/types (declarations)
-node node_modules/tsdown/dist/run.mjs                    # lib/index.js + lib/client.js
+npm run bootstrap   # symlink node_modules to the harness dependency tree
+npm run typecheck   # tsc → lib/types (declarations)
+npm run build       # tsdown → lib/index.js + lib/client.js
+npm run pack        # inspect the publishable tarball
 ```
 
-Prebuilt artifacts (`lib/`) are committed, so consumers do not need to build.
+Prebuilt artifacts (`lib/`) are committed, so consumers never need to build.
+</details>
 
-## Publish (CI/CD)
+## 📦 Publishing (CI/CD)
 
 `.github/workflows/`:
 
-- **ci.yml** — on every push/PR: verifies the committed prebuilt artifacts
-  (`lib/{index,invariant,client}.js`, `lib/types`, `cordis.patch.yml`), the dsh
-  manifest contract, and the `npm pack` tarball contents. No dependency
-  install is needed — the plugin ships prebuilt `lib/`.
-- **release.yml** — on tag `vX.Y.Z` (or manual dispatch): checks
-  `tag == package.json version`, `npm pack`s the tarball, creates/updates the
-  GitHub Release with the tarball, and runs `npm publish` — npm registry is
-  the official dsh plugin distribution channel (`dsh plugin --profile <name> add dsh-visual-plugin`).
-
-First release setup: add an `NPM_TOKEN` secret (npmjs automation token with
-publish permission) under repository **Settings → Secrets → Actions**; add the
-`dsh-plugin` GitHub topic for ecosystem discoverability (already applied here).
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `ci.yml` | push / PR | Verifies committed artifacts, the `dsh` bundle/client manifest, and `npm pack` contents |
+| `release.yml` | tag `v*` / manual | Version check → `npm pack` → GitHub Release + tarball → `npm publish` |
 
 Release a new version:
 
 ```sh
-# bump version in package.json, rebuild if sources changed (lib/ is committed), then:
-git tag v0.1.0 && git push origin v0.1.0   # triggers release.yml
+# bump version in package.json (rebuild + commit lib/ if sources changed), then:
+git tag v0.1.1 && git push origin v0.1.1   # triggers release.yml
 ```
 
-## Project layout
+Requires the `NPM_TOKEN` secret (granular access token, read-and-write, **bypass 2FA**) in repository **Settings → Secrets → Actions**.
 
-```
-src/
-  index.ts          host plugin: pre-step interception + vision_describe + routes
-  vision.ts         OpenAI-compatible vision calls (describe/test/balance)
-  config.ts         settings namespace `vision-bridge` + schema
-  adapter.ts        FR0 wrapper adapter: deepseek-vision route (image intake)
-  invariant.ts      invariant companion
-  client/
-    index.tsx       slot registrations (panel / toggle / tool card)
-    store.ts        shared open/closed store
-    VisionBridgePanel.tsx / VisionBridgeToggle.tsx / VisionDescribeCard.tsx
-    locales.ts      zh/en dictionaries
-    *.module.css    styles
-cordis.patch.yml    bundle patch layer (inserts the vision-bridge row)
-```
+## 📚 Resources
 
-Design and requirements: `docs/vision-bridge-prd.md` in the harness workspace
-(PRD v1.1); the host/client reference implementations this plugin is rebuilt
-from live as gitignored compiled artifacts in the harness checkout
-(`packages/extensions/vision-bridge/lib` and `packages/client/ui-vision-bridge/lib`).
+- [PRD v1.1](https://github.com/jyh20030112/dsh-visual-plugin/blob/main/docs/vision-bridge-prd.md) — requirements & design
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — the plugin framework (everything is a plugin)
+
+## 📄 License
+
+[MIT](LICENSE)
+
+[![powered by dsh](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
