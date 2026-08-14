@@ -65,6 +65,10 @@ dsh plugin --profile web remove dsh-visual-plugin
 
 ## 工作原理
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/jyh20030112/dsh-visual-plugin/main/assets/vision-bridge-flow.svg" width="720" alt="dsh web 中视觉桥接的动画演示：用户发图，视觉桥自动描述，主模型基于描述作答">
+</p>
+
 ```
 输入栏或工具结果产生图片 → 包装适配器递归发现 → 聊天记录保留原始图片
   → adapter stream → readImage → 视觉 API → 仅在模型私有请求中改写为 "[视觉描述] …"

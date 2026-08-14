@@ -66,6 +66,10 @@ Restart `dsh web`. The command forwards to `pnpm remove` inside the profile, and
 
 ## How it works
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/jyh20030112/dsh-visual-plugin/main/assets/vision-bridge-flow.svg" width="720" alt="Animated demo of the vision bridge in dsh web: the user sends an image, the vision bridge auto-describes it, and the main model answers from the description">
+</p>
+
 ```
 image in composer or tool result → wrapper finds it at any content depth → visible message keeps the image
   → adapter stream → readImage → vision API → "[视觉描述] …" in the private model request only
