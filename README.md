@@ -47,6 +47,15 @@ Restart `dsh web`, then:
 3. In the model picker, select provider **DeepSeek (Vision)** — the plugin's wrapper adapter declares image input so the gateway admits uploads.
 4. Send an image (optionally with a question). The model answers from the generated description and the panel shows the thumbnail + description within ~2s.
 
+### Reference local model
+
+This project is developed and tested with a locally deployed
+[Empero AI Qwythos-9B](https://huggingface.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M)
+as the vision backend. Its SGLang deployment can expose an OpenAI-compatible
+`/v1` endpoint; enter the endpoint URL and the server's registered model name
+(for example, `Qwythos`) in the Vision Bridge panel. The plugin is not tied to
+Qwythos-9B and can use any compatible vision model.
+
 ## How it works
 
 ```
@@ -85,7 +94,7 @@ Prebuilt `lib/` is committed, so consumers never build.
 
 ## Resources
 
-- [PRD](docs/vision-bridge-prd.md) · [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+- [Qwythos-9B on Hugging Face](https://huggingface.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M) · [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 ## License
 

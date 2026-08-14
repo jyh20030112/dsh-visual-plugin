@@ -47,6 +47,14 @@ dsh plugin --profile web add dsh-visual-plugin   # 或：github:jyh20030112/dsh-
 3. 在模型选择器中选 **DeepSeek (Vision)** —— 插件的包装适配器声明支持图片输入，网关才会放行上传。
 4. 发送一张图片（可附带问题）。主模型基于生成的描述作答，面板约 2 秒内出现缩略图 + 描述。
 
+### 参考本地模型
+
+本项目目前使用本地部署的
+[Empero AI Qwythos-9B](https://huggingface.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M)
+作为视觉后端进行开发和验证。该模型可通过 SGLang 提供 OpenAI 兼容的
+`/v1` 接口；在视觉桥接面板中填写接口地址和服务端注册的模型名称
+（例如 `Qwythos`）即可。插件并不绑定 Qwythos-9B，也可以接入其他兼容的视觉模型。
+
 ## 工作原理
 
 ```
@@ -85,7 +93,7 @@ npm run bootstrap && npm run typecheck && npm run build   # 需要本地 harness
 
 ## 相关资源
 
-- [PRD](docs/vision-bridge-prd.md) · [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+- [Hugging Face 上的 Qwythos-9B](https://huggingface.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M) · [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 ## 许可证
 

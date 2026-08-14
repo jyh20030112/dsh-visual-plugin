@@ -1,6 +1,6 @@
 {
   "name": "dsh-visual-plugin",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Vision bridge plugin for DeepSeek Harness: when the main model has no vision, forward user images to a configurable OpenAI-compatible vision model and show results in a Web UI right panel. Host tool + browser half, distributed as a dsh bundle.",
   "scripts": {
     "bootstrap": "./scripts/bootstrap.sh",
