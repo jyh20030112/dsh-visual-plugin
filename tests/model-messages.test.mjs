@@ -1,8 +1,24 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import test from 'node:test'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { serializeMessages } from '../../deepseek-harness/packages/llm/llm-deepseek/src/serialize.ts'
 import { ModelImageBridge } from '../src/model-messages.ts'
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const serializePath = [
+  process.env.HARNESS,
+  resolve(root, '../deepseek-harness'),
+  resolve(root, '../../deepseek-harness'),
+].filter(Boolean).map(harness => resolve(harness, 'packages/llm/llm-deepseek/src/serialize.ts'))
+  .find(existsSync)
+
+if (serializePath === undefined) {
+  throw new Error('set HARNESS to a local deepseek-harness checkout')
+}
+
+const { serializeMessages } = await import(pathToFileURL(serializePath).href)
 
 const attachment = {
   attachmentId: 'sha256:castle',

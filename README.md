@@ -62,6 +62,13 @@ npm run bootstrap
 dsh plugin --profile web add link:/absolute/path/to/dsh-visual-plugin
 ```
 
+`bootstrap` automatically finds a sibling or ancestor-adjacent Harness checkout.
+For another layout, set its location explicitly:
+
+```sh
+HARNESS=/absolute/path/to/deepseek-harness npm run bootstrap
+```
+
 Restart `dsh web`, then:
 
 1. Open the panel from the sidebar footer (**视觉桥接 / Vision Bridge**).

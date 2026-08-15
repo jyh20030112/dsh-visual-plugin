@@ -62,6 +62,12 @@ npm run bootstrap
 dsh plugin --profile web add link:/absolute/path/to/dsh-visual-plugin
 ```
 
+`bootstrap` 会自动查找同级或祖先目录旁的 Harness 检出。其他布局请显式指定：
+
+```sh
+HARNESS=/absolute/path/to/deepseek-harness npm run bootstrap
+```
+
 **重启** `dsh web` 后：
 
 1. 从侧栏底部打开面板（**视觉桥接 / Vision Bridge**）。
