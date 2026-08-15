@@ -12,7 +12,8 @@
  */
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { basename, dirname, resolve, sep } from 'node:path'
+import { basename, dirname, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
@@ -38,6 +39,14 @@ export const CLIENT_EXTERNALS: readonly string[] = [...PLATFORM_MODULES, RUNTIME
 const CSS_VIRTUAL_PREFIX = '\0dsh-css:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'
 
+/**
+ * Project root. CSS-module hashes and virtual ids are expressed relative to it
+ * so the committed lib/client.js bundle is byte-identical regardless of where
+ * the checkout lives (lightningcss hashes `filename` relative to `projectRoot`,
+ * and an absolute path in either would churn the artifact per machine).
+ */
+const ROOT = fileURLToPath(new URL('.', import.meta.url))
+
 /** Resolve a module.css import against its importer's directory. */
 function sourceAssetPath(source: string, importer: string): string {
   const emitted = resolve(dirname(importer), source)
@@ -54,22 +63,28 @@ const cssModulesPlugin: NonNullable<UserConfig['plugins']>[number] = {
   resolveId(source: string, importer: string | undefined) {
     if (!source.endsWith('.module.css')) return null
     const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
-    return CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
+    const rel = relative(ROOT, abs).split(sep).join('/')
+    return CSS_VIRTUAL_PREFIX + rel + CSS_VIRTUAL_SUFFIX
   },
   async load(virtualId: string) {
     if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
-    const fileId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
-    this.addWatchFile(fileId)
-    const source = await readFile(fileId)
+    const relId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+    const absId = resolve(ROOT, relId)
+    this.addWatchFile(absId)
+    const source = await readFile(absId)
     const { code, exports: cssExports } = transform({
-      filename: fileId,
+      filename: absId,
+      projectRoot: ROOT,
       code: source,
       cssModules: { pattern: '[hash]_[local]' },
       minify: true,
     })
+    // lightningcss returns the export map from a HashMap with per-call
+    // randomized iteration order; sort so the class map (and thus the emitted
+    // JSON) is byte-stable across builds.
     const classMap: Record<string, string> = {}
-    for (const [local, exp] of Object.entries(cssExports ?? {})) classMap[local] = exp.name
-    const tagId = `${ID}/${basename(fileId)}`
+    for (const local of Object.keys(cssExports ?? {}).sort()) classMap[local] = cssExports[local].name
+    const tagId = `${ID}/${basename(absId)}`
     return [
       `const css = ${JSON.stringify(code.toString())};`,
       `const tagId = ${JSON.stringify(tagId)};`,
