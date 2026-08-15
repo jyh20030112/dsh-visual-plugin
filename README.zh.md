@@ -54,6 +54,14 @@
 dsh plugin --profile web add dsh-visual-plugin   # 或：github:jyh20030112/dsh-visual-plugin
 ```
 
+若使用本地 DeepSeek Harness 源码开发，请改为链接本地插件目录：
+
+```sh
+cd /absolute/path/to/dsh-visual-plugin
+npm run bootstrap
+dsh plugin --profile web add link:/absolute/path/to/dsh-visual-plugin
+```
+
 **重启** `dsh web` 后：
 
 1. 从侧栏底部打开面板（**视觉桥接 / Vision Bridge**）。
