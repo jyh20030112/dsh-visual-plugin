@@ -110,6 +110,7 @@ npm run bootstrap && npm run typecheck && npm run build   # 需要本地 harness
 ## 致谢
 
 - [HsiangNianian](https://github.com/HsiangNianian/) — 感谢开发过程中的帮助与建议。
+- [dsh-auto-continue](https://github.com/HsiangNianian/dsh-auto-continue) — 网络错误等异常导致请求被中断时自动发送「继续」恢复的 DSH 插件（错误分类、自适应退避、浏览器通知），很好用的搭配。
 
 ## 许可证
 
