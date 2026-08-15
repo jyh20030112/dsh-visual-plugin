@@ -108,6 +108,10 @@ Prebuilt `lib/` is committed, so consumers never build.
 
 - [Qwythos-9B on Hugging Face](https://huggingface.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M) · [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
+## Thanks
+
+- [HsiangNianian](https://github.com/HsiangNianian/) — for their help and insights during development.
+
 ## License
 
 [MIT](LICENSE)

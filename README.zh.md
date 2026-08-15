@@ -107,6 +107,10 @@ npm run bootstrap && npm run typecheck && npm run build   # 需要本地 harness
 
 - [Hugging Face 上的 Qwythos-9B](https://huggingface.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M) · [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
+## 致谢
+
+- [HsiangNianian](https://github.com/HsiangNianian/) — 感谢开发过程中的帮助与建议。
+
 ## 许可证
 
 [MIT](LICENSE)
