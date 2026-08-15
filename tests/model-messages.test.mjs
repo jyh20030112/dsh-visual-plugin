@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { serializeMessages } from '../../../deepseek-harness/packages/llm/llm-deepseek/src/serialize.ts'
+import { serializeMessages } from '../../deepseek-harness/packages/llm/llm-deepseek/src/serialize.ts'
 import { ModelImageBridge } from '../src/model-messages.ts'
 
 const attachment = {

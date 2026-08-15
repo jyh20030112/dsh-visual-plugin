@@ -8,13 +8,13 @@
 # are already installed and built (lib/ present).
 #
 # Layout expected:
-#   <somewhere>/deepseek_workspace/dsh-visual-plugin   (this project)
-#   <somewhere>/deepseek-harness                      (the harness checkout)
+#   <somewhere>/dsh-visual-plugin   (this project)
+#   <somewhere>/deepseek-harness    (the harness checkout)
 # Adjust HARNESS below if your layout differs.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HARNESS="${HARNESS:-$(cd "$ROOT/../../deepseek-harness" && pwd)}"
+HARNESS="${HARNESS:-$(cd "$ROOT/../deepseek-harness" && pwd)}"
 
 NM="$ROOT/node_modules"
 rm -rf "$NM"
