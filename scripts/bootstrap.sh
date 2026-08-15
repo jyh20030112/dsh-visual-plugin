@@ -7,14 +7,36 @@
 # the plugin's node_modules to a local deepseek-harness checkout whose packages
 # are already installed and built (lib/ present).
 #
-# Layout expected:
-#   <somewhere>/deepseek_workspace/dsh-visual-plugin   (this project)
-#   <somewhere>/deepseek-harness                      (the harness checkout)
-# Adjust HARNESS below if your layout differs.
+# Harness is discovered in an ancestor directory, supporting both layouts:
+#   <somewhere>/dsh-visual-plugin
+#   <somewhere>/deepseek-harness
+# and:
+#   <somewhere>/deepseek_workspace/dsh-visual-plugin
+#   <somewhere>/deepseek-harness
+# Set HARNESS explicitly to use another location.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HARNESS="${HARNESS:-$(cd "$ROOT/../../deepseek-harness" && pwd)}"
+
+find_harness() {
+  local directory="$ROOT"
+  while [ "$directory" != "/" ]; do
+    if [ -d "$directory/deepseek-harness" ]; then
+      printf '%s\n' "$directory/deepseek-harness"
+      return 0
+    fi
+    directory="$(dirname "$directory")"
+  done
+  return 1
+}
+
+if [ -z "${HARNESS:-}" ]; then
+  HARNESS="$(find_harness)" || {
+    echo "error: set HARNESS to a local deepseek-harness checkout" >&2
+    exit 1
+  }
+fi
+HARNESS="$(cd "$HARNESS" && pwd)"
 
 NM="$ROOT/node_modules"
 rm -rf "$NM"

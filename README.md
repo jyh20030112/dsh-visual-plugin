@@ -54,6 +54,21 @@ Unconfigured or failed calls degrade to a `[视觉描述失败] <reason>` placeh
 dsh plugin --profile web add dsh-visual-plugin   # or: github:jyh20030112/dsh-visual-plugin
 ```
 
+When developing this checkout against a local DeepSeek Harness source tree, install the local package instead:
+
+```sh
+cd /absolute/path/to/dsh-visual-plugin
+npm run bootstrap
+dsh plugin --profile web add link:/absolute/path/to/dsh-visual-plugin
+```
+
+`bootstrap` automatically finds a sibling or ancestor-adjacent Harness checkout.
+For another layout, set its location explicitly:
+
+```sh
+HARNESS=/absolute/path/to/deepseek-harness npm run bootstrap
+```
+
 Restart `dsh web`, then:
 
 1. Open the panel from the sidebar footer (**视觉桥接 / Vision Bridge**).
