@@ -70,16 +70,16 @@ export function VisionBridgePanel(props: VisionBridgePanelProps): JSX.Element | 
   const [width, setWidth] = useState<number | undefined>(undefined)
   const [resizing, setResizing] = useState(false)
 
-  /** Load recent image descriptions from the host route. */
+  /** Load recent image descriptions for the current session from the host route. */
   const refresh = useCallback(async (): Promise<void> => {
     try {
-      const response = await fetch('/vision-bridge/recent')
+      const response = await fetch(`/vision-bridge/recent?sessionId=${encodeURIComponent(sessionId ?? '')}`)
       const body = await response.json() as { entries?: RecentEntry[] }
       setHistory(body.entries ?? [])
     } catch {
       setHistory([])
     }
-  }, [])
+  }, [sessionId])
 
   /** Resolve one attachment's bytes for thumbnail display through the session seam. */
   const loadThumbnail = useCallback(async (attachmentId: string, ownerSessionId?: string): Promise<void> => {

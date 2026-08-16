@@ -47,11 +47,12 @@ export declare class ModelImageBridge {
     private nextOperation;
     constructor(options: ModelImageBridgeOptions);
     /** Return a completed automatic description without starting new work. */
-    cachedDescription(attachmentId: string, sessionId?: string): string | undefined;
+    cachedDescription(attachmentId: string): string | undefined;
+    /** Seed the cache with a previously persisted description (startup restore). */
+    seedResolved(attachmentId: string, description: string): void;
     /** Build model-bound copies of messages containing image blocks. */
     rewrite(messages: readonly Message[], context?: ModelImageRewriteContext): Promise<readonly Message[]>;
     /** Rewrite images at every core content depth, including read_image tool results. */
     private rewriteContent;
     private descriptionFor;
-    private cacheKey;
 }

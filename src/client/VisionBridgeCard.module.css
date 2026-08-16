@@ -214,8 +214,28 @@
   cursor: not-allowed;
 }
 
+.inputInvalid {
+  box-sizing: border-box;
+  border: 1px solid var(--dsw-alias-state-error-primary, #ec1313);
+  background: var(--dsw-specific-input-major, #fff);
+  width: 100%;
+  min-height: 40px;
+  color: var(--dsw-alias-label-primary, #0f1115);
+  font: inherit;
+  border-radius: 9px;
+  outline: none;
+  padding: 9px 11px;
+}
+
 .hint {
   color: var(--dsw-alias-label-tertiary, #70747a);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.invalid {
+  color: var(--dsw-alias-state-error-primary, #ec1313);
   font-size: 11px;
   line-height: 1.5;
   margin: 0;

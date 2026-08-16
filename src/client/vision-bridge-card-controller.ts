@@ -4,8 +4,9 @@
  * web gateway's allowlist, so the card cannot bind it through `settingsScope`
  * (it would read `settings-not-exposed` forever). It instead reads and writes
  * the bridge config through the same-origin `/vision-bridge/config` route the
- * Host exposes: `url`/`model` are settings-section values, `apiKey` is a
- * write-only credential the Host stores through the credentials seam.
+ * Host exposes: `url`/`model`/`historyLimit` are settings-section values,
+ * `apiKey` is a write-only credential the Host stores through the credentials
+ * seam.
  * @module dsh-visual-plugin/client/vision-bridge-card-controller
  */
 
@@ -20,11 +21,13 @@ export interface VisionBridgeCardState {
   available: boolean
   writable: boolean
   dirty: boolean
+  invalid: boolean
   saving: boolean
   failed: boolean
   url: string
   model: string
   apiKey: string
+  historyLimit: string
   apiKeyConfigured: boolean
 }
 
@@ -45,7 +48,7 @@ export interface VisionBridgeCardFace extends VisionBridgeCardActions {
 /** The `/vision-bridge/config` response envelope the Host returns. */
 interface ConfigEnvelope {
   ok?: boolean
-  config?: { url: string; model: string; keyConfigured: boolean }
+  config?: { url: string; model: string; historyLimit?: number | null; keyConfigured: boolean }
 }
 
 /** Bridges the same-origin config route onto the card's staged form. */
@@ -64,15 +67,18 @@ export class VisionBridgeCardController {
   }
 
   private projection(): VisionBridgeCardState {
+    const plan = this.form.plan(this.section)
     return {
       available: this.available,
       writable: true,
-      dirty: this.form.plan(this.section).dirty,
+      dirty: plan.dirty,
+      invalid: plan.invalid,
       saving: this.saving,
       failed: this.failed,
       url: this.form.text('url', this.section),
       model: this.form.text('model', this.section),
       apiKey: this.form.text('apiKey', this.section),
+      historyLimit: this.form.text('historyLimit', this.section),
       apiKeyConfigured: this.apiKeyConfigured,
     }
   }
@@ -83,7 +89,11 @@ export class VisionBridgeCardController {
       const response = await fetch('/vision-bridge/config')
       const body = await response.json() as ConfigEnvelope
       if (body.ok !== true || body.config === undefined) return
-      this.section = { url: body.config.url ?? '', model: body.config.model ?? '' }
+      this.section = {
+        url: body.config.url ?? '',
+        model: body.config.model ?? '',
+        historyLimit: body.config.historyLimit,
+      }
       this.apiKeyConfigured = body.config.keyConfigured ?? false
       this.available = true
       this.publish()
@@ -116,23 +126,26 @@ export class VisionBridgeCardController {
    * user can correct them.
    */
   private async save(): Promise<void> {
-    if (!this.form.plan(this.section).dirty || this.saving) return
+    const plan = this.form.plan(this.section)
+    if (!plan.dirty || plan.invalid || this.saving) return
     this.saving = true
     this.failed = false
     this.publish()
     const url = this.form.text('url', this.section)
     const model = this.form.text('model', this.section)
     const apiKey = this.form.text('apiKey', this.section)
+    const limitText = this.form.text('historyLimit', this.section).trim()
+    const historyLimit = limitText === '' ? null : Number(limitText)
     try {
       const response = await fetch('/vision-bridge/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, model, apiKey }),
+        body: JSON.stringify({ url, model, apiKey, historyLimit }),
       })
       const body = await response.json() as ConfigEnvelope
       if (body.ok === true) {
         this.form.discard()
-        this.section = { url, model }
+        this.section = { url, model, historyLimit }
         this.apiKeyConfigured = body.config?.keyConfigured ?? this.apiKeyConfigured
       } else {
         this.failed = true

@@ -17,6 +17,9 @@ export declare const zh: {
     'field.apiKey': string;
     'field.apiKey.placeholder': string;
     'field.apiKey.hint': string;
+    'field.historyLimit': string;
+    'field.historyLimit.hint': string;
+    'field.historyLimit.invalid': string;
     'action.save': string;
     'action.discard': string;
     'action.saving': string;

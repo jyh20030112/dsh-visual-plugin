@@ -4,8 +4,9 @@
  * web gateway's allowlist, so the card cannot bind it through `settingsScope`
  * (it would read `settings-not-exposed` forever). It instead reads and writes
  * the bridge config through the same-origin `/vision-bridge/config` route the
- * Host exposes: `url`/`model` are settings-section values, `apiKey` is a
- * write-only credential the Host stores through the credentials seam.
+ * Host exposes: `url`/`model`/`historyLimit` are settings-section values,
+ * `apiKey` is a write-only credential the Host stores through the credentials
+ * seam.
  * @module dsh-visual-plugin/client/vision-bridge-card-controller
  */
 import { type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client';
@@ -15,11 +16,13 @@ export interface VisionBridgeCardState {
     available: boolean;
     writable: boolean;
     dirty: boolean;
+    invalid: boolean;
     saving: boolean;
     failed: boolean;
     url: string;
     model: string;
     apiKey: string;
+    historyLimit: string;
     apiKeyConfigured: boolean;
 }
 /** The write actions the card's slot entry injects. */

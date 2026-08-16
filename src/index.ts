@@ -11,6 +11,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type {} from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -22,7 +24,7 @@ import type {} from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { DEFAULT_API_KEY_ENV, NS, VisionBridgeConfig, type VisionBridgeConfigValue } from './config.ts'
+import { DEFAULT_API_KEY_ENV, DEFAULT_HISTORY_LIMIT, NS, VisionBridgeConfig, type VisionBridgeConfigValue } from './config.ts'
 import { describeImage, queryBalance, testConnection } from './vision.ts'
 import { registerVisionAdapter } from './adapter.ts'
 import { recordRecent, type RecentEntry } from './recent.ts'
@@ -30,6 +32,7 @@ import { describeWithLowInformationRetry } from './description-policy.ts'
 import { ModelImageBridge } from './model-messages.ts'
 import { isSameTurnAttachmentToolCall } from './turn-guard.ts'
 import { VisionActivityStore, type VisionActivity } from './activity.ts'
+import { load as loadHistory, record as recordHistory } from './history-store.ts'
 
 /** Vision-bridge plugin name. */
 export const name = 'vision-bridge'
@@ -59,7 +62,6 @@ export function apply(ctx: Context): void {
   // session logs; the entries are presentation-only and never model-visible.
   const recent: RecentEntry[] = []
   const MAX_RECENT_IMAGES = 20
-  const MAX_DESCRIPTIONS_PER_IMAGE = 20
   const activities = new VisionActivityStore()
 
   const settings = ctx.get('settings')!
@@ -93,6 +95,12 @@ export function apply(ctx: Context): void {
   const scope = settings.register(NS, VisionBridgeConfig, {
     base: { url: '', model: '', apiKeyEnv: DEFAULT_API_KEY_ENV },
   })
+
+  /** The configured per-image description-history limit (default, or `null` = unlimited). */
+  function historyLimit(): number | null {
+    const limit = scope.get().historyLimit
+    return limit === undefined ? DEFAULT_HISTORY_LIMIT : limit
+  }
 
   /** Resolve the configured endpoint facts, or undefined when unconfigured. */
   async function resolvedFacts(): Promise<{ url: string; model: string; apiKey: string } | undefined> {
@@ -138,12 +146,12 @@ export function apply(ctx: Context): void {
       activities.start(entry, entry.sessionId === undefined ? undefined : activeTurn(entry.sessionId))
     },
     onDescription(entry) {
-      recordRecent(recent, {
+      persistDescription({
         time: Date.now(),
         attachmentId: entry.attachmentId,
         sessionId: entry.sessionId,
         description: entry.description,
-      }, MAX_RECENT_IMAGES, MAX_DESCRIPTIONS_PER_IMAGE)
+      })
       activities.complete(entry)
     },
     onFailure(entry) {
@@ -153,6 +161,30 @@ export function apply(ctx: Context): void {
       return error instanceof Error ? error.message : String(error)
     },
   })
+
+  // Persist description history under the harness home so restarts reuse prior
+  // descriptions instead of re-describing old images.
+  const historyDir = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), '.visual_plugin')
+
+  /** Record one completed description into both the in-memory feed and disk. */
+  function persistDescription(entry: { time: number; attachmentId: string; sessionId?: string; description: string }): void {
+    recordRecent(recent, entry, MAX_RECENT_IMAGES, historyLimit())
+    void recordHistory(historyDir, entry)
+  }
+
+  /** Rebuild the recent feed and the description cache from persisted history. */
+  async function restoreHistory(): Promise<void> {
+    const records = (await loadHistory(historyDir)).sort((a, b) => (a.time ?? 0) - (b.time ?? 0))
+    const latestByImage = new Map<string, string>()
+    for (const record of records) {
+      recordRecent(recent, record, MAX_RECENT_IMAGES, historyLimit())
+      latestByImage.set(record.attachmentId, record.description)
+    }
+    for (const [attachmentId, description] of latestByImage) {
+      modelImages.seedResolved(attachmentId, description)
+    }
+  }
+  void restoreHistory()
 
   ctx.tools.register(defineTool({
     name: 'vision_describe',
@@ -180,10 +212,7 @@ export function apply(ctx: Context): void {
       const attachmentId = String(args.attachmentId)
       const ref = refs.get(attachmentId)
       if (ref === undefined) throw new Error(`vision_describe: unknown attachment ${args.attachmentId}`)
-      const cached = modelImages.cachedDescription(
-        attachmentId,
-        exec.agent === undefined ? undefined : String(exec.agent.session.id),
-      )
+      const cached = modelImages.cachedDescription(attachmentId)
       if (cached !== undefined && exec.agent !== undefined
         && isSameTurnAttachmentToolCall(exec.agent.session.events, attachmentId, String(exec.callId))) {
         return { description: cached }
@@ -200,12 +229,12 @@ export function apply(ctx: Context): void {
         args.prompt,
         exec.signal,
       )
-      recordRecent(recent, {
+      persistDescription({
         time: Date.now(),
         attachmentId: String(ref.attachmentId),
         sessionId: exec.agent === undefined ? undefined : String(exec.agent.session.id),
         description: result.description,
-      }, MAX_RECENT_IMAGES, MAX_DESCRIPTIONS_PER_IMAGE)
+      })
       return { description: result.description }
     },
   }))
@@ -253,7 +282,7 @@ export function apply(ctx: Context): void {
     // and writes the bridge config through this same-origin route instead of
     // the settings/credentials RPCs. The api key is stored through the host
     // credentials seam (write-only; never returned, only a configured flag).
-    const configView = async (): Promise<{ url: string; model: string; apiKeyEnv: string; keyConfigured: boolean }> => {
+    const configView = async (): Promise<{ url: string; model: string; apiKeyEnv: string; keyConfigured: boolean; historyLimit: number | null }> => {
       const value = scope.get()
       const apiKeyEnv = value.apiKeyEnv || DEFAULT_API_KEY_ENV
       let keyConfigured = false
@@ -262,7 +291,13 @@ export function apply(ctx: Context): void {
       } catch {
         keyConfigured = false
       }
-      return { url: value.url, model: value.model, apiKeyEnv, keyConfigured }
+      return {
+        url: value.url,
+        model: value.model,
+        apiKeyEnv,
+        keyConfigured,
+        historyLimit: value.historyLimit === undefined ? DEFAULT_HISTORY_LIMIT : value.historyLimit,
+      }
     }
 
     ctx.effect(() => ws.register({
@@ -286,7 +321,14 @@ export function apply(ctx: Context): void {
           return
         }
         try {
-          await scope.update({ url, model })
+          const patch: { url: string; model: string; historyLimit?: number | null } = { url, model }
+          const historyLimit = body.historyLimit
+          if (historyLimit === null) {
+            patch.historyLimit = null
+          } else if (typeof historyLimit === 'number' && Number.isFinite(historyLimit)) {
+            patch.historyLimit = historyLimit
+          }
+          await scope.update(patch)
           const apiKeyEnv = scope.get().apiKeyEnv || DEFAULT_API_KEY_ENV
           if (apiKey.length > 0) {
             await credentials.set(credentialRef(apiKeyEnv), apiKey)
@@ -340,8 +382,14 @@ export function apply(ctx: Context): void {
     ctx.effect(() => ws.register({
       kind: 'exact',
       path: '/vision-bridge/recent',
-      async handler(_req, res) {
-        writeJson(res, { entries: recent })
+      async handler(req, res) {
+        const url = new URL(req.url ?? '/vision-bridge/recent', 'http://localhost')
+        const sessionId = url.searchParams.get('sessionId')
+        writeJson(res, {
+          entries: sessionId === null || sessionId.length === 0
+            ? []
+            : recent.filter(entry => entry.sessionId === sessionId),
+        })
       },
     }), 'vision-bridge: route /vision-bridge/recent')
 

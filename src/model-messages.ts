@@ -76,8 +76,13 @@ export class ModelImageBridge {
   }
 
   /** Return a completed automatic description without starting new work. */
-  cachedDescription(attachmentId: string, sessionId?: string): string | undefined {
-    return this.resolved.get(this.cacheKey(attachmentId, sessionId))
+  cachedDescription(attachmentId: string): string | undefined {
+    return this.resolved.get(attachmentId)
+  }
+
+  /** Seed the cache with a previously persisted description (startup restore). */
+  seedResolved(attachmentId: string, description: string): void {
+    this.resolved.set(attachmentId, description)
   }
 
   /** Build model-bound copies of messages containing image blocks. */
@@ -154,7 +159,7 @@ export class ModelImageBridge {
     messageId?: string,
   ): Promise<string> {
     const attachmentId = String(attachment.attachmentId)
-    const key = this.cacheKey(attachmentId, context.sessionId)
+    const key = attachmentId
     const existing = this.pending.get(key)
     if (existing !== undefined) return existing
     const operation: ModelImageOperation = {
@@ -183,7 +188,4 @@ export class ModelImageBridge {
     }
   }
 
-  private cacheKey(attachmentId: string, sessionId?: string): string {
-    return `${sessionId ?? ''}\u0000${attachmentId}`
-  }
 }

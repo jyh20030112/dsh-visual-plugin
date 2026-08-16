@@ -44,7 +44,7 @@ export function VisionBridgeCard(props: VisionBridgeCardProps): JSX.Element | nu
   if (!state.available) return null
 
   const title = t('settings.title')
-  const blocked = !state.dirty || state.saving
+  const blocked = !state.dirty || state.invalid || state.saving
   const canTest = !testing && state.url.trim() !== '' && state.model.trim() !== ''
 
   /** POST a connection test to the host route, using the staged drafts. */
@@ -160,6 +160,21 @@ export function VisionBridgeCard(props: VisionBridgeCardProps): JSX.Element | nu
             />
             <p className={css.hint}>{t('field.apiKey.hint')}</p>
           </div>
+
+          <label className={css.field}>
+            <span className={css.label}>{t('field.historyLimit')}</span>
+            <input
+              className={state.invalid ? css.inputInvalid : css.input}
+              type="number"
+              min="1"
+              value={state.historyLimit}
+              disabled={!state.writable}
+              onChange={(event) => { props.edit('historyLimit', event.target.value) }}
+            />
+            <p className={state.invalid ? css.invalid : css.hint}>
+              {state.invalid ? t('field.historyLimit.invalid') : t('field.historyLimit.hint')}
+            </p>
+          </label>
 
           <div className={css.testRow}>
             <button type="button" className={css.testButton} disabled={!canTest} onClick={() => { void runTest() }}>
