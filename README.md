@@ -71,10 +71,13 @@ HARNESS=/absolute/path/to/deepseek-harness npm run bootstrap
 
 Restart `dsh web`, then:
 
-1. Open the panel from the sidebar footer (**视觉桥接 / Vision Bridge**).
-2. Configure the endpoint URL, a vision model name, and the API key; click **保存配置** → **测试连接**.
+1. Open **Settings → Plugins → Plugin configuration** and expand the **Vision Bridge** card:
+
+   <img src="https://raw.githubusercontent.com/jyh20030112/dsh-visual-plugin/main/assets/vision-bridge-config.png" width="560" alt="Vision Bridge configuration card in the settings plugin configuration tab">
+
+2. Fill in the endpoint URL, the vision model name, and the API key. The **侧边栏 / Sidebar** toggle shows or hides the image-history panel; the history limit defaults to 20, and leaving it empty means unlimited. Click **保存 / Save**, then **测试连接 / Test connection**.
 3. In the model picker, select provider **DeepSeek (Vision)** — the plugin's wrapper adapter declares image input so the gateway admits uploads.
-4. Send an image (optionally with a question). The model answers from the generated description and the panel shows the thumbnail + description within ~2s.
+4. Send an image (optionally with a question). The model answers from the generated description, and the image-history panel shows the thumbnail + description within ~2s.
 
 ### Reference local model
 

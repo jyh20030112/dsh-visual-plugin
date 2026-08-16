@@ -70,10 +70,13 @@ HARNESS=/absolute/path/to/deepseek-harness npm run bootstrap
 
 **重启** `dsh web` 后：
 
-1. 从侧栏底部打开面板（**视觉桥接 / Vision Bridge**）。
-2. 配置接口地址、视觉模型名、API Key；点 **保存配置** → **测试连接**。
+1. 打开 **设置 → 插件 → 插件配置**，展开 **视觉桥接** 卡片：
+
+   <img src="https://raw.githubusercontent.com/jyh20030112/dsh-visual-plugin/main/assets/vision-bridge-config.png" width="560" alt="设置插件配置标签页里的视觉桥接配置卡片">
+
+2. 填写接口地址、视觉模型名、API Key。**侧边栏** 开关控制图片历史面板的显示/隐藏；历史描述上限默认 20，留空表示不限制。点 **保存**，再 **测试连接**。
 3. 在模型选择器中选 **DeepSeek (Vision)** —— 插件的包装适配器声明支持图片输入，网关才会放行上传。
-4. 发送一张图片（可附带问题）。主模型基于生成的描述作答，面板约 2 秒内出现缩略图 + 描述。
+4. 发送一张图片（可附带问题）。主模型基于生成的描述作答，图片历史面板约 2 秒内出现缩略图 + 描述。
 
 ### 参考本地模型
 
