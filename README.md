@@ -131,6 +131,7 @@ Prebuilt `lib/` is committed, so consumers never build.
 ## Thanks
 
 - [HsiangNianian](https://github.com/HsiangNianian/) — for their help and insights during development.
+- [tingfeng347](https://github.com/tingfeng347) — for the build-stability and local-harness-setup fixes.
 - [dsh-auto-continue](https://github.com/HsiangNianian/dsh-auto-continue) — a DSH Web UI plugin that auto-resumes interrupted requests with 「继续」 (error classification, adaptive backoff, browser notifications); a handy companion.
 
 ## License
