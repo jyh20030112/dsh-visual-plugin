@@ -68,6 +68,8 @@ link "@deepseek-ai/dsh-client-ui-sidebar" "$HARNESS/packages/client/ui-sidebar"
 link "@deepseek-ai/dsh-client-ui-slots" "$HARNESS/packages/client/ui-slots"
 link "@deepseek-ai/dsh-client-ui-tool"  "$HARNESS/packages/client/ui-tool"
 link "@deepseek-ai/dsh-client-ui-conversation" "$HARNESS/packages/client/ui-conversation"
+link "@deepseek-ai/dsh-client-ui-settings" "$HARNESS/packages/client/ui-settings"
+link "@deepseek-ai/dsh-client-ui-settings-plugins" "$HARNESS/packages/client/ui-settings-plugins"
 link "@deepseek-ai/dsh-host-apiproxy"   "$HARNESS/packages/host/apiproxy"
 link "@deepseek-ai/dsh-api-remotes"     "$HARNESS/packages/api/remotes"
 

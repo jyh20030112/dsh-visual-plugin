@@ -1,6 +1,6 @@
 {
   "name": "dsh-visual-plugin",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Vision bridge plugin for DeepSeek Harness: when the main model has no vision, forward user images to a configurable OpenAI-compatible vision model and show results in a Web UI right panel. Host tool + browser half, distributed as a dsh bundle.",
   "scripts": {
     "bootstrap": "./scripts/bootstrap.sh",
@@ -45,7 +45,8 @@
         "slots",
         "connection",
         "locale",
-        "@deepseek-ai/dsh-client-ui-conversation"
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-settings-plugins"
       ]
     }
   },
@@ -62,7 +63,8 @@
     "@deepseek-ai/dsh-invariants": "^0.1.0-rc.5",
     "@deepseek-ai/dsh-agent": "^0.1.0-rc.5",
     "@deepseek-ai/dsh-session": "^0.1.0-rc.5",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.5"
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.5",
+    "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.1.0-rc.5"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": { "optional": true },
@@ -77,7 +79,8 @@
     "@deepseek-ai/dsh-invariants": { "optional": true },
     "@deepseek-ai/dsh-agent": { "optional": true },
     "@deepseek-ai/dsh-session": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-conversation": { "optional": true }
+    "@deepseek-ai/dsh-client-ui-conversation": { "optional": true },
+    "@deepseek-ai/dsh-client-ui-settings-plugins": { "optional": true }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "file:../../deepseek-harness/vendor/cordis",
@@ -96,6 +99,8 @@
     "@deepseek-ai/dsh-client-ui-slots": "file:../../deepseek-harness/packages/client/ui-slots",
     "@deepseek-ai/dsh-client-ui-tool": "file:../../deepseek-harness/packages/client/ui-tool",
     "@deepseek-ai/dsh-client-ui-conversation": "file:../../deepseek-harness/packages/client/ui-conversation",
+    "@deepseek-ai/dsh-client-ui-settings": "file:../../deepseek-harness/packages/client/ui-settings",
+    "@deepseek-ai/dsh-client-ui-settings-plugins": "file:../../deepseek-harness/packages/client/ui-settings-plugins",
     "@deepseek-ai/dsh-host-apiproxy": "file:../../deepseek-harness/packages/host/apiproxy",
     "typescript": "^6.0.3",
     "tsdown": "^0.22.2",

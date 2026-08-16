@@ -1,10 +1,10 @@
 /**
- * Vision bridge floating panel: configure the vision endpoint, test the
- * connection, watch recent image descriptions with their thumbnails, and read
- * the remaining balance. Pure presentation: every fact arrives through the
- * composed props (the store seat, the connection inject face, and the
- * standard `useSessions` hook); the panel itself holds only transient form
- * and fetch state.
+ * Vision bridge floating panel: the image-history surface only. Configuration
+ * now lives in the harness settings page (see `VisionBridgeCard`); this panel
+ * shows recent image descriptions with their thumbnails and lets the user drag
+ * its left edge to resize. Pure presentation: every fact arrives through the
+ * composed props (the store seat, the connection inject face, and the standard
+ * `useSessions` hook); the panel itself holds only transient fetch state.
  * @module dsh-visual-plugin/client/VisionBridgePanel
  */
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client';
@@ -12,7 +12,7 @@ import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepsee
 import { createVisionBridgeStore } from './store.ts';
 /** Injected business face of the floating panel entry. */
 export interface VisionBridgePanelInjected {
-    /** Connection API client for settings/credentials/session reads; absent pre-connect. */
+    /** Connection API client for session/attachment reads; absent pre-connect. */
     api: IApiClient | undefined;
 }
 /** Composed props of the `shell.overlay` entry. */

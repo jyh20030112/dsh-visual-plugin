@@ -1,9 +1,10 @@
 /**
  * Vision bridge web surface, client half. Registers the floating panel
- * (`shell.overlay`), its sidebar toggle (`sidebar.footer.action`), and the
- * `vision_describe` tool card (`tool.call.toolview`), all sharing one
- * open/closed store seat. The host half (`../index.ts`) owns image
- * interception, the tool, and the HTTP routes.
+ * (`shell.overlay`), the `vision_describe` tool card (`tool.call.toolview`),
+ * and the plugin's configuration card in the harness settings surface
+ * (`settings.plugin.item`, which also owns the sidebar visibility toggle). The
+ * host half (`../index.ts`) owns image interception, the tool, and the HTTP
+ * routes.
  * @module dsh-visual-plugin/client
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
@@ -17,8 +18,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Required services: the slot registry, connection RPC, and locale registry. */
 export declare const inject: string[];
 /**
- * Client plugin body: register the floating panel, its sidebar toggle, and
- * the `vision_describe` tool card.
+ * Client plugin body: register the floating panel, its sidebar toggle, the
+ * `vision_describe` tool card, and the settings configuration card.
  * @param ctx - client root context.
  */
 export declare function apply(ctx: ClientContext): void;

@@ -1,9 +1,10 @@
 /**
  * Vision bridge web surface, client half. Registers the floating panel
- * (`shell.overlay`), its sidebar toggle (`sidebar.footer.action`), and the
- * `vision_describe` tool card (`tool.call.toolview`), all sharing one
- * open/closed store seat. The host half (`../index.ts`) owns image
- * interception, the tool, and the HTTP routes.
+ * (`shell.overlay`), the `vision_describe` tool card (`tool.call.toolview`),
+ * and the plugin's configuration card in the harness settings surface
+ * (`settings.plugin.item`, which also owns the sidebar visibility toggle). The
+ * host half (`../index.ts`) owns image interception, the tool, and the HTTP
+ * routes.
  * @module dsh-visual-plugin/client
  */
 
@@ -15,10 +16,12 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import { VisionBridgePanel, type VisionBridgePanelInjected } from './VisionBridgePanel.tsx'
-import { VisionBridgeToggle } from './VisionBridgeToggle.tsx'
 import { VisionDescribeCard } from './VisionDescribeCard.tsx'
 import { InlineVisionDescriptions } from './VisionActivityCards.tsx'
+import { VisionBridgeCard } from './VisionBridgeCard.tsx'
+import { VisionBridgeCardController } from './vision-bridge-card-controller.ts'
 import { visionActivityDefinition } from './vision-activity-definition.ts'
 import { createVisionBridgeStore } from './store.ts'
 import { en, zh, type VisionBridgeKey } from './locales.ts'
@@ -37,8 +40,8 @@ const NS = 'vision-bridge'
 export const inject = ['slots', 'connection', 'locale', 'conversationEvents']
 
 /**
- * Client plugin body: register the floating panel, its sidebar toggle, and
- * the `vision_describe` tool card.
+ * Client plugin body: register the floating panel, its sidebar toggle, the
+ * `vision_describe` tool card, and the settings configuration card.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -52,14 +55,6 @@ export function apply(ctx: ClientContext): void {
   // open/closed state. Passing the factory would give each entry its own
   // exclusive instance, so the toggle would flip a copy the panel never sees.
   const visionBridgeStore = createVisionBridgeStore()
-
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-    name: 'sidebar.footer.action',
-    id: 'vision-bridge-toggle',
-    locale: NS,
-    store: visionBridgeStore,
-    inject: () => ({}),
-  }, VisionBridgeToggle))
 
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
@@ -82,4 +77,18 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: () => ({}),
   }, InlineVisionDescriptions))
+
+  // The plugin configuration card inside Settings → Plugins. The `vision-bridge`
+  // namespace is not on the settings web gateway's allowlist, so the card reads
+  // and writes the config through the host's same-origin `/vision-bridge/config`
+  // route instead of the settings scope.
+  const visionBridgeCard = new VisionBridgeCardController()
+  ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
+    name: 'settings.plugin.item',
+    id: 'vision-bridge',
+    order: 30,
+    locale: NS,
+    store: visionBridgeStore,
+    inject: () => visionBridgeCard.inject(),
+  }, VisionBridgeCard))
 }

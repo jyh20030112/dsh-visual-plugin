@@ -249,8 +249,8 @@ export function apply(ctx: Context): void {
 
   const registerPanelRoutes = (ws: typeof webServer extends undefined ? never : NonNullable<typeof webServer>): void => {
     // The settings seam's web gateway only exposes in-repo allowlisted
-    // namespaces ('settings-not-exposed' otherwise), so the panel reads and
-    // writes the bridge config through these same-origin routes instead of
+    // namespaces ('settings-not-exposed' otherwise), so the settings card reads
+    // and writes the bridge config through this same-origin route instead of
     // the settings/credentials RPCs. The api key is stored through the host
     // credentials seam (write-only; never returned, only a configured flag).
     const configView = async (): Promise<{ url: string; model: string; apiKeyEnv: string; keyConfigured: boolean }> => {

@@ -1,8 +1,8 @@
 /**
  * Vision bridge panel store: the floating panel's open/closed state, shared
- * between the sidebar toggle and the overlay entry. Panel content (config,
- * history, balance) is fetched on demand by the panel component, not held
- * here.
+ * between the settings card's sidebar toggle and the overlay entry. The open
+ * state persists to localStorage so a browser refresh keeps the panel visible
+ * when the user left it open.
  * @module dsh-visual-plugin/client/store
  */
 import { type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client';

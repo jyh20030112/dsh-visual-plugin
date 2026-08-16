@@ -10,16 +10,38 @@ test('automatic vision activity is never mounted in the composer dock', async ()
   )
 })
 
-test('panel shows one latest card per image with expandable history', async () => {
+test('configuration registers a card in the settings plugins surface', async () => {
+  const source = await readFile(new URL('../src/client/index.tsx', import.meta.url), 'utf8')
+  assert.match(source, /ctx\.slots\.inject\('settings\.plugin\.item'/)
+  assert.match(source, /VisionBridgeCardController/)
+  // The vision-bridge namespace is not on the settings gateway allowlist, so the
+  // card reads the config through the host route instead of the settings scope.
+  assert.doesNotMatch(source, /settingsScope\.bind|dsh-client-ui-settings\/client/)
+})
+
+test('settings card reads and writes through the host config route', async () => {
+  const source = await readFile(new URL('../src/client/vision-bridge-card-controller.ts', import.meta.url), 'utf8')
+  assert.match(source, /fetch\('\/vision-bridge\/config'/)
+  assert.doesNotMatch(source, /settingsScope\.bind|dsh-client-ui-settings\/client/)
+})
+
+test('panel shows one latest card per image with expandable history, config-free', async () => {
   const source = await readFile(new URL('../src/client/VisionBridgePanel.tsx', import.meta.url), 'utf8')
 
-  assert.match(source, /type PanelView = 'config' \| 'recent'/)
   assert.match(source, /history\.map\(\(entry\)/)
   assert.match(source, /const latest = entry\.descriptions\[0\]/)
   assert.match(source, /const older = entry\.descriptions\.slice\(1\)/)
   assert.match(source, /aria-expanded=\{expanded\}/)
   assert.match(source, /history\.emptyTitle/)
   assert.match(source, /DescriptionCopyButton text=\{latest\.description\}/)
+  assert.doesNotMatch(source, /vision-bridge\/config|vision-bridge\/balance/)
+})
+
+test('panel is mouse-resizable via a clamped left-edge drag', async () => {
+  const source = await readFile(new URL('../src/client/VisionBridgePanel.tsx', import.meta.url), 'utf8')
+  assert.match(source, /clampPanelWidth/)
+  assert.match(source, /onPointerDown/)
+  assert.match(source, /setPointerCapture/)
 })
 
 test('every completed inline description exposes the shared copy action', async () => {
@@ -31,13 +53,12 @@ test('every completed inline description exposes the shared copy action', async 
   assert.match(copySource, /document\.execCommand\('copy'\)/)
 })
 
-test('panel styles use harness theme tokens and a large image preview', async () => {
+test('panel styles use harness theme tokens, a large image preview, and a resize handle', async () => {
   const css = await readFile(new URL('../src/client/VisionBridgePanel.module.css', import.meta.url), 'utf8')
 
   assert.match(css, /--dsw-alias-bg-base/)
   assert.match(css, /--dsw-alias-label-primary/)
   assert.match(css, /\.thumb\s*\{[\s\S]*height: 240px/)
-  assert.match(css, /#root\):has\(\.panel\)/)
-  assert.match(css, /width: calc\(100% - var\(--vision-bridge-panel-width\)\)/)
+  assert.match(css, /\.resizeHandle\s*\{[\s\S]*cursor: ew-resize/)
   assert.match(css, /overflow-y: auto/)
 })
