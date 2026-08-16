@@ -122,7 +122,9 @@ npm run bootstrap && npm run typecheck && npm run build   # 需要本地 harness
 
 ## 相关资源
 
-- [Hugging Face 上的 Qwythos-9B](https://huggingface.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M) · [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) —— 本插件所扩展的宿主框架。
+- [Hugging Face 上的 Qwythos-9B](https://huggingface.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M) —— 开发与测试所用的本地视觉模型。
+- [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) —— 收录本插件的 DSH 插件精选列表。
 
 ## 致谢
 

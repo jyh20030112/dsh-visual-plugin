@@ -124,7 +124,9 @@ Prebuilt `lib/` is committed, so consumers never build.
 
 ## Resources
 
-- [Qwythos-9B on Hugging Face](https://huggingface.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M) · [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — the plugin host this project extends.
+- [Qwythos-9B on Hugging Face](https://huggingface.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M) — the local vision model used for development and testing.
+- [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) — the curated DSH plugin list where this plugin is registered.
 
 ## Thanks
 
