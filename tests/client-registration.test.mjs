@@ -13,6 +13,7 @@ test('automatic vision activity is never mounted in the composer dock', async ()
 test('configuration registers a card in the settings plugins surface', async () => {
   const source = await readFile(new URL('../src/client/index.tsx', import.meta.url), 'utf8')
   assert.match(source, /ctx\.slots\.inject\('settings\.plugin\.item'/)
+  assert.match(source, /key: 'vision-bridge'/)
   assert.match(source, /VisionBridgeCardController/)
   // The vision-bridge namespace is not on the settings gateway allowlist, so the
   // card reads the config through the host route instead of the settings scope.

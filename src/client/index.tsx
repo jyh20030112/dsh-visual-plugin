@@ -85,8 +85,7 @@ export function apply(ctx: ClientContext): void {
   const visionBridgeCard = new VisionBridgeCardController()
   ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
     name: 'settings.plugin.item',
-    id: 'vision-bridge',
-    order: 30,
+    key: 'vision-bridge',
     locale: NS,
     store: visionBridgeStore,
     inject: () => visionBridgeCard.inject(),
