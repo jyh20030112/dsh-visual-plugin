@@ -82,13 +82,21 @@ export function apply(ctx: ClientContext): void {
   // namespace is not on the settings web gateway's allowlist, so the card reads
   // and writes the config through the host's same-origin `/vision-bridge/config`
   // route instead of the settings scope.
+  //
+  // Dual-harness registration: the `settings.plugin.item` slot is a `list`
+  // slot in 0.1.0-rc.6 (dispatch by `id`/`order`) and a `keyed` slot in
+  // 0.1.0-rc.7 (dispatch by `key` = the settings namespace, paired to the
+  // namespaces the Host serves). Each runtime reads only its own fields and
+  // ignores the rest; the spread keeps them out of either contract's
+  // excess-property check while preserving the literal `key` type the keyed
+  // contract demands. One row carries both, so the same bundle mounts under
+  // either harness.
   const visionBridgeCard = new VisionBridgeCardController()
   ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
     name: 'settings.plugin.item',
-    id: 'vision-bridge',
-    order: 30,
     locale: NS,
     store: visionBridgeStore,
     inject: () => visionBridgeCard.inject(),
+    ...({ key: 'vision-bridge', id: 'vision-bridge', order: 30 }),
   }, VisionBridgeCard))
 }
