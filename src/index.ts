@@ -33,6 +33,11 @@ import { ModelImageBridge } from './model-messages.ts'
 import { isSameTurnAttachmentToolCall } from './turn-guard.ts'
 import { VisionActivityStore, type VisionActivity } from './activity.ts'
 import { load as loadHistory, record as recordHistory } from './history-store.ts'
+import { createVideoCoordinator } from './video/index.ts'
+import { createSystemMediaEngine } from './video/media-engine.ts'
+import { registerVideoRoutes } from './video/http.ts'
+import { createVisionFrameInterpreter } from './video/frame-interpreter.ts'
+import type { VideoAnalysisResult } from './video/types.ts'
 
 /** Vision-bridge plugin name. */
 export const name = 'vision-bridge'
@@ -44,7 +49,7 @@ export const name = 'vision-bridge'
  * wrapper adapter, and systemPrompt for model guidance. All ship in the base
  * bundle; webServer stays optional because it exists only in web-surface trees.
  */
-export const inject = ['tools', 'settings', 'credentials', 'attachments', 'llm', 'systemPrompt', 'agents']
+export const inject = ['tools', 'settings', 'credentials', 'attachments', 'llm', 'systemPrompt', 'agents', 'sessions']
 
 /**
  * The host half: model-bound image description, the describe tool, the panel's
@@ -165,6 +170,11 @@ export function apply(ctx: Context): void {
   // Persist description history under the harness home so restarts reuse prior
   // descriptions instead of re-describing old images.
   const historyDir = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), '.visual_plugin')
+  const videoCoordinator = createVideoCoordinator({
+    rootDir: join(historyDir, 'videos'),
+    mediaEngine: createSystemMediaEngine(),
+    frameInterpreter: createVisionFrameInterpreter(resolvedFacts),
+  })
 
   /** Record one completed description into both the in-memory feed and disk. */
   function persistDescription(entry: { time: number; attachmentId: string; sessionId?: string; description: string }): void {
@@ -239,6 +249,68 @@ export function apply(ctx: Context): void {
     },
   }))
 
+  ctx.tools.register(defineTool({
+    name: 'video_describe',
+    description: 'Analyze one plugin-owned video identified by a [视频ID] marker. '
+      + 'Use this when the user asks about a selected video. The tool sends extracted keyframes to the configured vision model '
+      + 'and returns timestamped visual evidence; synthesize that evidence with the current text model into the final answer. '
+      + 'Do not claim to hear audio.',
+    parameters: {
+      videoId: { type: 'string', required: true, description: 'The opaque id shown after [视频ID].' },
+      prompt: { type: 'string', description: 'The user question to answer from visible video evidence.' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        properties: {
+          videoId: { type: 'string' },
+          fileName: { type: 'string' },
+          durationSeconds: { type: 'number' },
+          prompt: { type: 'string' },
+          evidence: { type: 'array' },
+          warnings: { type: 'array' },
+        },
+        additionalProperties: false,
+      },
+      render: (_args, value) => {
+        const result = value as unknown as VideoAnalysisResult
+        const evidence = result.evidence.map(item => {
+          const times = item.timestampsSeconds.map(time => `${time.toFixed(3)}s`).join(', ')
+          return `[${times}] ${item.description}`
+        }).join('\n\n')
+        return [{
+          type: 'text',
+          text: `Video: ${result.fileName} (${result.durationSeconds.toFixed(3)}s)\n`
+            + `Question: ${result.prompt}\nTimestamped visual evidence:\n${evidence}\n`
+            + `Warnings: ${result.warnings.join('; ') || 'none'}\n`
+            + 'Use the current text model to synthesize a direct answer from this evidence. Do not infer audio.',
+        }]
+      },
+    },
+    timeoutMs: 10 * 60_000,
+    async execute(args, exec) {
+      if (exec.agent === undefined) throw new Error('video_describe requires a calling agent')
+      const result = await (await videoCoordinator).analyze({
+        sessionId: String(exec.agent.session.id),
+        videoId: String(args.videoId),
+        ...(typeof args.prompt === 'string' ? { prompt: args.prompt } : {}),
+        signal: exec.signal,
+      })
+      return {
+        videoId: result.videoId,
+        fileName: result.fileName,
+        durationSeconds: result.durationSeconds,
+        prompt: result.prompt,
+        evidence: result.evidence.map(item => ({
+          frameIds: [...item.frameIds],
+          timestampsSeconds: [...item.timestampsSeconds],
+          description: item.description,
+        })),
+        warnings: [...result.warnings],
+      }
+    },
+  }))
+
   // Tell the model how to follow up when it sees a placeholder or a description block.
   const systemPrompt = ctx.get('systemPrompt')!
   systemPrompt.section({
@@ -247,7 +319,10 @@ export function apply(ctx: Context): void {
     text: 'The user may attach images. The model request contains a private replacement for each image: '
       + '"[视觉描述] <description>\\n[附件] <attachmentId>". The visible chat still keeps the original image. '
       + 'Answer the current message directly from the supplied description. Do not call vision_describe in the same turn '
-      + 'that introduces the image. Only call it for a later user question when the existing description lacks detail.',
+      + 'that introduces the image. Only call it for a later user question when the existing description lacks detail. '
+      + 'The plugin may also stage a selected video as "[视频] <filename>\\n[视频ID] <videoId>". '
+      + 'Call video_describe for questions about that video, then answer using its timestamped visual evidence. '
+      + 'Video analysis has no audio evidence, so never claim what was heard.',
   })
 
   // FR0: admit image uploads by exposing the deepseek-vision provider route.
@@ -277,6 +352,10 @@ export function apply(ctx: Context): void {
     typeof body[key] === 'string' ? body[key] as string : ''
 
   const registerPanelRoutes = (ws: typeof webServer extends undefined ? never : NonNullable<typeof webServer>): void => {
+    void ctx.effect(async () => registerVideoRoutes(ws, await videoCoordinator, {
+      sessionExists: sessionId => ctx.sessions.get(SessionId(sessionId)) !== undefined,
+    }))
+
     // The settings seam's web gateway only exposes in-repo allowlisted
     // namespaces ('settings-not-exposed' otherwise), so the settings card reads
     // and writes the bridge config through this same-origin route instead of

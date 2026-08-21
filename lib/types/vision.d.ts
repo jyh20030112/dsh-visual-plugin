@@ -98,6 +98,11 @@ export declare function testConnection(baseUrl: string, apiKey: string, model: s
  * @param signal - optional abort signal.
  */
 export declare function describeImage(baseUrl: string, apiKey: string, model: string, data: string, mediaType: string, prompt?: string, signal?: AbortSignal): Promise<VisionDescribeResult>;
+/** Describe an ordered set of images in one OpenAI-compatible multimodal request. */
+export declare function describeImages(baseUrl: string, apiKey: string, model: string, images: readonly {
+    data: string;
+    mediaType: string;
+}[], prompt: string, signal?: AbortSignal): Promise<VisionDescribeResult>;
 /**
  * Query a provider's remaining balance when it exposes a known endpoint.
  * Recognized: DeepSeek `/user/balance`, SiliconFlow `/v1/user/info`,

@@ -263,6 +263,36 @@ export async function describeImage(
   return describe
 }
 
+/** Describe an ordered set of images in one OpenAI-compatible multimodal request. */
+export async function describeImages(
+  baseUrl: string,
+  apiKey: string,
+  model: string,
+  images: readonly { data: string; mediaType: string }[],
+  prompt: string,
+  signal?: AbortSignal,
+): Promise<VisionDescribeResult> {
+  if (images.length === 0) throw new Error('at least one image is required')
+  const content = [
+    { type: 'text', text: prompt },
+    ...images.map(image => ({
+      type: 'image_url',
+      image_url: { url: imageDataUrl(image.data, image.mediaType) },
+    })),
+  ]
+  const result = await callChatCompletions(
+    completionsUrl(baseUrl),
+    apiKey,
+    model,
+    [{ role: 'user', content }],
+    signal,
+  )
+  return {
+    description: result.content,
+    ...(result.usage === undefined ? {} : { usage: result.usage }),
+  }
+}
+
 /** Derive a provider balance probe from the endpoint base, or undefined. */
 function balanceProbe(baseUrl: string): { url: string; parse: (json: unknown) => VisionBalanceLine[] } | undefined {
   const base = baseUrl.replace(/\/+$/, '')
