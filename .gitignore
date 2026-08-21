@@ -1,5 +1,7 @@
 node_modules/
 *.tsbuildinfo
 .codegraph/
-docs/
+docs/*
+!docs/video-analysis-design.zh.md
+!docs/video-analysis-implementation-plan.zh.md
 .DS_Store

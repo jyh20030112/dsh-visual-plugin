@@ -15,8 +15,8 @@
 </p>
 
 <p align="center">
-  Give your text-only model eyes: forward user images to any OpenAI-compatible
-  vision model and see the results in a Web UI right panel.
+  Give your text-only model eyes: analyze user images and videos and inspect
+  the results in a Web UI right panel.
 </p>
 
 <p align="center">
@@ -31,7 +31,9 @@ A plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 - **In-conversation lifecycle cards** — automatic analysis appears immediately below its source image and settles in place as success or failure; one logical analysis produces one card.
 - **Intent-aware prompts** — send an image *with a question* and the description is generated from your own words.
 - **`vision_describe` tool** — the model can answer a later follow-up question when the automatic description lacks the requested detail.
-- **Right-side panel** — configure endpoint / model / key, test the connection, watch one latest description per image with thumbnails (2s auto-refresh), read remaining balance.
+- **Plugin-owned video upload** — accepts MP4, M4V, MOV, AVI, MPG/MPEG, MKV, and WebM only when extension, signature, and FFprobe agree.
+- **Scene-aware video analysis** — normalizes to H.264/yuv420p MP4, extracts keyframes with PySceneDetect, asks the vision model for timestamped evidence, and lets the current DSH text model answer.
+- **Right-side panel** — switch between image/video cards, play normalized videos directly, stage a selected video in the chat draft, and inspect dependency health.
 - **Secrets stay secret** — the API key lives in the harness credentials seam (write-only, never echoed).
 
 ## How it works
@@ -49,6 +51,17 @@ image in composer or tool result → wrapper finds it at any content depth → v
 Unconfigured or failed calls degrade to a `[视觉描述失败] <reason>` placeholder, so the conversation never breaks.
 
 ## Quick start
+
+Video support requires FFmpeg/FFprobe `>= 6.1` from the same major release (with `libx264`) and PySceneDetect `>= 0.7.1 < 0.8` installed on the host:
+
+```sh
+ffmpeg -version
+ffprobe -version
+python -m pip install 'scenedetect[opencv]>=0.7.1,<0.8'
+scenedetect version
+```
+
+The plugin never downloads these tools or runs installers. Image features remain available when they are missing, and the settings card reports each video dependency issue.
 
 ```sh
 dsh plugin --profile web add dsh-visual-plugin   # or: github:jyh20030112/dsh-visual-plugin
@@ -78,6 +91,7 @@ Restart `dsh web`, then:
 2. Fill in the endpoint URL, the vision model name, and the API key. The **侧边栏 / Sidebar** toggle shows or hides the image-history panel; the history limit defaults to 20, and leaving it empty means unlimited. Click **保存 / Save**, then **测试连接 / Test connection**.
 3. In the model picker, select provider **DeepSeek (Vision)** — the plugin's wrapper adapter declares image input so the gateway admits uploads.
 4. Send an image (optionally with a question). The model answers from the generated description, and the image-history panel shows the thumbnail + description within ~2s.
+5. Upload video from the video button beside the composer. Once processing finishes, select **Videos** in the right panel to play it; **Ask in chat** stages a draft and never submits automatically.
 
 ### Reference local model
 
@@ -106,6 +120,7 @@ src/
   description-policy.ts  intent-first prompt + low-information retry
   config.ts     settings namespace `vision-bridge` + schema
   adapter.ts    deepseek-vision wrapper adapter (admission + private rewrite boundary)
+  video/        upload, container probing, transcoding, scene detection, frame interpretation, HTTP Range playback
   client/       browser half: panel / sidebar toggle / automatic + tool cards / locales / css
 cordis.patch.yml  bundle patch layer
 ```

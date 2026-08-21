@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  给纯文本模型装上眼睛：把用户图片转发给任意 OpenAI 兼容的视觉模型，
+  给纯文本模型装上眼睛：解析用户图片与视频，
   并在 Web UI 右侧面板实时展示结果。
 </p>
 
@@ -31,7 +31,9 @@
 - **对话内状态卡片** —— 自动解析开始后立即在原图片下方显示“正在解析”，成功或失败后原位更新；同一逻辑解析只显示一张卡片。
 - **按问题定向描述** —— 发图同时带问题时，描述提示词由你的原话生成。
 - **`vision_describe` 工具** —— 模型可对任意已附图追问细节。
-- **右侧面板** —— 配置接口 / 模型 / Key、测试连接、查看最近描述（缩略图 + 2 秒自动刷新）、剩余额度。
+- **插件自有视频上传** —— 支持 MP4、M4V、MOV、AVI、MPG/MPEG、MKV 和 WebM；扩展名、文件签名与 FFprobe 结果必须一致。
+- **视频场景解析** —— 统一转为 H.264/yuv420p MP4，通过 PySceneDetect 提取关键帧，再由视觉模型提供时间戳证据、当前 DSH 文本模型完成回答。
+- **右侧面板** —— 在图片/视频卡片间切换，直接播放视频、选择视频到会话草稿，并查看依赖健康状态。
 - **密钥不落地** —— API Key 经 harness credentials 缝存储（只写不回显）。
 
 ## 工作原理
@@ -49,6 +51,17 @@
 未配置或调用失败时降级为 `[视觉描述失败] <原因>` 占位文本，对话不会中断。
 
 ## 快速开始
+
+视频功能需要宿主机预先安装 FFmpeg/FFprobe `>= 6.1`（同一主版本，含 `libx264`）和 PySceneDetect `>= 0.7.1 < 0.8`：
+
+```sh
+ffmpeg -version
+ffprobe -version
+python -m pip install 'scenedetect[opencv]>=0.7.1,<0.8'
+scenedetect version
+```
+
+插件不会自动下载或执行安装脚本。缺少依赖时图片功能仍可用，设置页会列出视频依赖问题。
 
 ```sh
 dsh plugin --profile web add dsh-visual-plugin   # 或：github:jyh20030112/dsh-visual-plugin
@@ -77,6 +90,7 @@ HARNESS=/absolute/path/to/deepseek-harness npm run bootstrap
 2. 填写接口地址、视觉模型名、API Key。**侧边栏** 开关控制图片历史面板的显示/隐藏；历史描述上限默认 20，留空表示不限制。点 **保存**，再 **测试连接**。
 3. 在模型选择器中选 **DeepSeek (Vision)** —— 插件的包装适配器声明支持图片输入，网关才会放行上传。
 4. 发送一张图片（可附带问题）。主模型基于生成的描述作答，图片历史面板约 2 秒内出现缩略图 + 描述。
+5. 视频可从输入框旁的视频按钮上传。处理完成后在右侧选择 **视频** 播放；点击 **在会话中提问** 只会写入草稿，确认后再发送。
 
 ### 参考本地模型
 
@@ -104,6 +118,7 @@ src/
   description-policy.ts  意图优先提示词 + 低信息重试
   config.ts     settings 命名空间 `vision-bridge` + schema
   adapter.ts    deepseek-vision 包装适配器（图片入站 + 私有改写边界）
+  video/        上传、容器探测、转码、场景检测、关键帧解释与 HTTP Range 播放
   client/       浏览器半：面板 / 侧栏开关 / 自动解析与工具卡片 / 文案 / 样式
 cordis.patch.yml  bundle 补丁层
 ```
