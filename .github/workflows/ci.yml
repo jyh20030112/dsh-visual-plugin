@@ -28,15 +28,21 @@ jobs:
           cache: pnpm
           cache-dependency-path: deepseek-harness/pnpm-lock.yaml
 
-      - name: 安装 Harness 构建依赖
+      - name: 安装并构建 Harness
         working-directory: deepseek-harness
-        run: pnpm install --frozen-lockfile
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build:lib
 
       - name: 安装并校验视频依赖
         run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
           python -m pip install 'scenedetect[opencv]>=0.7.1,<0.8'
-          ffmpeg -version | head -1
-          ffprobe -version | head -1
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version
+          ffprobe -version
           scenedetect version
 
       - name: 链接 Harness 并运行完整门禁
