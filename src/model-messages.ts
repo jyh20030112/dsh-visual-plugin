@@ -160,6 +160,8 @@ export class ModelImageBridge {
   ): Promise<string> {
     const attachmentId = String(attachment.attachmentId)
     const key = attachmentId
+    const resolved = this.resolved.get(key)
+    if (resolved !== undefined) return resolved
     const existing = this.pending.get(key)
     if (existing !== undefined) return existing
     const operation: ModelImageOperation = {
@@ -182,9 +184,8 @@ export class ModelImageBridge {
     this.pending.set(key, pending)
     try {
       return await pending
-    } catch (error) {
+    } finally {
       if (this.pending.get(key) === pending) this.pending.delete(key)
-      throw error
     }
   }
 

@@ -92,6 +92,33 @@ test('caches one automatic description per attachment across model steps', async
   assert.equal(bridge.cachedDescription('sha256:castle'), 'cached description')
 })
 
+test('reuses a persisted description seeded during startup', async () => {
+  let calls = 0
+  const descriptions = []
+  const bridge = new ModelImageBridge({
+    describe: async () => {
+      calls += 1
+      return 'new description'
+    },
+    onDescription: entry => descriptions.push(entry),
+    failureText: error => `[视觉描述失败] ${String(error)}`,
+  })
+  bridge.seedResolved('sha256:castle', 'persisted description')
+  const message = {
+    role: 'user',
+    content: [{ type: 'image', attachment }, { type: 'text', text: 'identify it' }],
+  }
+
+  const rewritten = await bridge.rewrite([message])
+
+  assert.equal(calls, 0)
+  assert.equal(descriptions.length, 0)
+  assert.equal(
+    rewritten[0].content[0].text,
+    '[视觉描述] persisted description\n[附件] sha256:castle\n',
+  )
+})
+
 test('publishes one visual lifecycle for an automatic description across model steps', async () => {
   const lifecycle = []
   let describeCalls = 0
