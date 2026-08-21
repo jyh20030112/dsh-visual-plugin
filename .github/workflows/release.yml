@@ -28,10 +28,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout compatible DeepSeek Harness
+        uses: actions/checkout@v4
+        with:
+          repository: jyh20030112/deepseek-harness
+          ref: 99f6f02fecdb7dff40c3fbc9470f5907c29f74ca
+          path: deepseek-harness
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+          cache: pnpm
+          cache-dependency-path: deepseek-harness/pnpm-lock.yaml
+
+      - name: 安装 Harness 与视频依赖
+        run: |
+          pnpm --dir deepseek-harness install --frozen-lockfile
+          python -m pip install 'scenedetect[opencv]>=0.7.1,<0.8'
+          scenedetect version
 
       - name: 解析并校验版本（tag == package.json version）
         id: ver
@@ -45,12 +64,27 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$V" >> "$GITHUB_OUTPUT"
+          case "$V" in
+            *-*) echo "dist_tag=beta" >> "$GITHUB_OUTPUT"; echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "dist_tag=latest" >> "$GITHUB_OUTPUT"; echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: 测试、类型检查并校验预构建产物
+        env:
+          HARNESS: ${{ github.workspace }}/deepseek-harness
+        run: |
+          npm run bootstrap
+          npm test
+          npm run typecheck
+          npm run build
+          git diff --exit-code -- lib/
 
       - name: 校验提交的预构建产物
         run: |
           test -f lib/index.js
           test -f lib/invariant.js
           test -f lib/client.js
+          test -f lib/types/video/types.d.ts
           test -f cordis.patch.yml
 
       - name: npm pack
@@ -65,13 +99,15 @@ jobs:
           if gh release view "$TAG" --json tagName >/dev/null 2>&1; then
             gh release upload "$TAG" "$TGZ" --clobber
           else
+            EXTRA=()
+            if [ "${{ steps.ver.outputs.prerelease }}" = "true" ]; then EXTRA+=(--prerelease); fi
             gh release create "$TAG" "$TGZ" \
               --title "dsh-visual-plugin ${{ steps.ver.outputs.tag }}" \
-              --generate-notes
+              --generate-notes "${EXTRA[@]}"
           fi
           echo "GitHub Release: $TAG ($TGZ)"
 
       - name: 发布到 npm（官方插件分发渠道）
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public
+        run: npm publish --access public --tag "${{ steps.ver.outputs.dist_tag }}"

@@ -11,9 +11,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout compatible DeepSeek Harness
+        uses: actions/checkout@v4
+        with:
+          repository: jyh20030112/deepseek-harness
+          ref: 99f6f02fecdb7dff40c3fbc9470f5907c29f74ca
+          path: deepseek-harness
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
+          cache-dependency-path: deepseek-harness/pnpm-lock.yaml
+
+      - name: 安装 Harness 构建依赖
+        working-directory: deepseek-harness
+        run: pnpm install --frozen-lockfile
+
+      - name: 安装并校验视频依赖
+        run: |
+          python -m pip install 'scenedetect[opencv]>=0.7.1,<0.8'
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
+          scenedetect version
+
+      - name: 链接 Harness 并运行完整门禁
+        env:
+          HARNESS: ${{ github.workspace }}/deepseek-harness
+        run: |
+          npm run bootstrap
+          npm test
+          npm run typecheck
+          npm run build
+          git diff --exit-code -- lib/
 
       - name: 校验提交的预构建产物
         run: |
@@ -21,6 +55,7 @@ jobs:
           test -f lib/invariant.js
           test -f lib/client.js
           test -f lib/types/index.d.ts
+          test -f lib/types/video/types.d.ts
           test -f cordis.patch.yml
 
       - name: 校验 dsh 清单（bundle + client 契约）
@@ -36,8 +71,8 @@ jobs:
 
       - name: 校验 npm pack 内容
         run: |
-          LIST=$(npm pack --dry-run 2>&1 || true)
-          for f in lib/index.js lib/invariant.js lib/client.js lib/types/index.d.ts cordis.patch.yml; do
+          LIST=$(npm pack --dry-run 2>&1)
+          for f in lib/index.js lib/invariant.js lib/client.js lib/types/index.d.ts lib/types/video/types.d.ts cordis.patch.yml; do
             if ! echo "$LIST" | grep -q "$f"; then
               echo "tarball 缺少 $f"
               exit 1
