@@ -3,6 +3,9 @@
 export declare const zh: {
     'panel.title': string;
     'panel.shortHint': string;
+    'media.select': string;
+    'media.imagesHint': string;
+    'media.videosHint': string;
     'settings.title': string;
     'settings.description': string;
     'settings.readOnly': string;
@@ -55,6 +58,23 @@ export declare const zh: {
     'history.loadPreview': string;
     'history.previewAlt': string;
     'history.attachments': string;
+    'video.title': string;
+    'video.latestHint': string;
+    'video.upload': string;
+    'video.uploading': string;
+    'video.uploadProgress': string;
+    'video.processing': string;
+    'video.emptyTitle': string;
+    'video.empty': string;
+    'video.status': string;
+    'video.facts': string;
+    'video.delete': string;
+    'video.useInChat': string;
+    'video.dependencies': string;
+    'video.dependenciesChecking': string;
+    'video.dependenciesReady': string;
+    'video.dependenciesMissing': string;
+    'video.evidence': string;
 };
 /** The vision-bridge namespace key union. */
 export type VisionBridgeKey = keyof typeof zh;

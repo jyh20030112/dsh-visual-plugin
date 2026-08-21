@@ -1,5 +1,5 @@
 /**
- * Vision bridge floating panel: the image-history surface only. Configuration
+ * Vision bridge floating panel: image history and plugin-owned videos. Configuration
  * now lives in the harness settings page (see `VisionBridgeCard`); this panel
  * shows recent image descriptions with their thumbnails and lets the user drag
  * its left edge to resize. Pure presentation: every fact arrives through the
@@ -8,7 +8,7 @@
  * @module dsh-visual-plugin/client/VisionBridgePanel
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-host-apiproxy/client'
 import type { RpcResponse } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { AttachmentIdType } from '@deepseek-ai/dsh-attachment'
@@ -18,6 +18,7 @@ import type {} from '@deepseek-ai/dsh-client-runtime/client'
 import { clampPanelWidth } from './panel-geometry.ts'
 import { createVisionBridgeStore } from './store.ts'
 import { DescriptionCopyButton } from './DescriptionCopyButton.tsx'
+import type { VideoClientController } from './video-client-controller.ts'
 import css from './VisionBridgePanel.module.css'
 
 const NS = 'vision-bridge'
@@ -31,6 +32,8 @@ function resultValue<T>(response: RpcResponse<T>): T | undefined {
 export interface VisionBridgePanelInjected {
   /** Connection API client for session/attachment reads; absent pre-connect. */
   api: IApiClient | undefined
+  /** Shared plugin-owned upload/list controller. */
+  videoController: VideoClientController
 }
 
 /** One retained description inside an image's history. */
@@ -59,16 +62,23 @@ export type VisionBridgePanelProps =
  * @param props - composed props for the overlay entry.
  */
 export function VisionBridgePanel(props: VisionBridgePanelProps): JSX.Element | null {
-  const { useStore, actions, t, api, useSessions } = props
+  const { useStore, actions, t, api, useSessions, videoController } = props
   const open = useStore(s => s.open)
   const sessions = useSessions(s => s)
   const sessionId = sessions.current
+  const resolvedSessionId = sessionId === undefined ? '' : String(sessionId)
 
+  const [mediaView, setMediaView] = useState<'images' | 'videos'>('images')
   const [history, setHistory] = useState<RecentEntry[]>([])
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
   const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({})
   const [width, setWidth] = useState<number | undefined>(undefined)
   const [resizing, setResizing] = useState(false)
+  const videoState = useSyncExternalStore(
+    listener => videoController.subscribe(resolvedSessionId, listener),
+    () => videoController.snapshot(resolvedSessionId),
+    () => videoController.snapshot(resolvedSessionId),
+  )
 
   /** Load recent image descriptions for the current session from the host route. */
   const refresh = useCallback(async (): Promise<void> => {
@@ -106,6 +116,13 @@ export function VisionBridgePanel(props: VisionBridgePanelProps): JSX.Element | 
     const timer = setInterval(() => { void refresh() }, 2000)
     return () => clearInterval(timer)
   }, [open, refresh])
+
+  useEffect(() => {
+    if (!open || mediaView !== 'videos') return
+    void videoController.refresh(resolvedSessionId)
+    const timer = setInterval(() => { void videoController.refresh(resolvedSessionId) }, 2000)
+    return () => clearInterval(timer)
+  }, [mediaView, open, resolvedSessionId, videoController])
 
   // Load every visible image so a long recent list remains useful while the
   // panel's content viewport handles vertical scrolling.
@@ -173,7 +190,30 @@ export function VisionBridgePanel(props: VisionBridgePanelProps): JSX.Element | 
       </header>
 
       <div className={css.content}>
-        <section className={css.view}>
+        <div className={css.mediaSelector} role="tablist" aria-label={t('media.select')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mediaView === 'images'}
+            className={mediaView === 'images' ? css.mediaCardActive : css.mediaCard}
+            onClick={() => setMediaView('images')}
+          >
+            <span className={css.mediaCardIcon} aria-hidden="true">▧</span>
+            <span><strong>{t('history.title')}</strong><small>{t('media.imagesHint')}</small></span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mediaView === 'videos'}
+            className={mediaView === 'videos' ? css.mediaCardActive : css.mediaCard}
+            onClick={() => setMediaView('videos')}
+          >
+            <span className={css.mediaCardIcon} aria-hidden="true">▶</span>
+            <span><strong>{t('video.title')}</strong><small>{t('media.videosHint')}</small></span>
+          </button>
+        </div>
+
+        {mediaView === 'images' ? <section className={css.view}>
           <div className={css.recentHeading}>
             <div>
               <h2 className={css.subtitle}>{t('history.title')}</h2>
@@ -265,7 +305,104 @@ export function VisionBridgePanel(props: VisionBridgePanelProps): JSX.Element | 
                   })}
                 </div>
               )}
-        </section>
+        </section> : (
+          <section className={css.view}>
+            <div className={css.recentHeading}>
+              <div>
+                <h2 className={css.subtitle}>{t('video.title')}</h2>
+                <p>{t('video.latestHint')}</p>
+              </div>
+              <button
+                type="button"
+                className={css.textAction}
+                onClick={() => void videoController.refresh(resolvedSessionId)}
+              >
+                {t('action.refresh')}
+              </button>
+            </div>
+            {videoState.error !== undefined && <p className={css.videoError}>{videoState.error}</p>}
+            {videoState.videos.length === 0 ? (
+              <div className={css.empty}>
+                <div className={css.emptyIcon} aria-hidden="true">▶</div>
+                <h3>{t('video.emptyTitle')}</h3>
+                <p>{t('video.empty')}</p>
+              </div>
+            ) : (
+              <div className={css.recentList}>
+                {videoState.videos.map(video => (
+                  <article key={video.videoId} className={css.entry}>
+                    <div className={css.videoPreview}>
+                      {video.normalizedUrl === undefined ? (
+                        <div className={css.videoPending}>{t('video.status', { status: video.status })}</div>
+                      ) : (
+                        <video
+                          controls
+                          preload="metadata"
+                          src={video.normalizedUrl}
+                          poster={video.posterUrl}
+                          aria-label={video.fileName}
+                        />
+                      )}
+                    </div>
+                    <div className={css.entryBody}>
+                      <div className={css.entryTopline}>
+                        <strong className={css.videoName} title={video.fileName}>{video.fileName}</strong>
+                        <span className={css.latestBadge}>{t('video.status', { status: video.status })}</span>
+                      </div>
+                      <p className={css.videoFacts}>
+                        {video.durationSeconds === undefined
+                          ? t('video.processing')
+                          : t('video.facts', {
+                            duration: video.durationSeconds.toFixed(1),
+                            width: String(video.width ?? 0),
+                            height: String(video.height ?? 0),
+                            frames: String(video.frameCount ?? 0),
+                          })}
+                      </p>
+                      {video.error !== undefined && <p className={css.videoError}>{video.error.message}</p>}
+                      {video.warnings.length > 0 && <p className={css.videoWarnings}>{video.warnings.join(' · ')}</p>}
+                      {video.analysis !== undefined && (
+                        <details className={css.videoEvidence}>
+                          <summary>{t('video.evidence', { count: String(video.analysis.evidence.length) })}</summary>
+                          <p>{video.analysis.prompt}</p>
+                          {video.analysis.evidence.map((item, index) => (
+                            <div key={`${video.videoId}-evidence-${index}`}>
+                              <time>{item.timestampsSeconds.map(time => `${time.toFixed(1)}s`).join(' · ')}</time>
+                              <p>{item.description}</p>
+                            </div>
+                          ))}
+                        </details>
+                      )}
+                      <footer className={css.entryFooter}>
+                        <time dateTime={new Date(video.updatedAt).toISOString()}>
+                          {new Date(video.updatedAt).toLocaleString()}
+                        </time>
+                        <div className={css.videoActions}>
+                          <button
+                            type="button"
+                            className={css.textAction}
+                            onClick={() => videoController.select(resolvedSessionId, video.videoId)}
+                          >
+                            {t('video.useInChat')}
+                          </button>
+                          {['ready', 'done', 'partial', 'failed', 'cancelled', 'paused_config'].includes(video.status) && (
+                            <button
+                              type="button"
+                              className={css.textAction}
+                              onClick={() => void videoController.delete(resolvedSessionId, video.videoId).catch(() => {})}
+                            >
+                              {t('video.delete')}
+                            </button>
+                          )}
+                        </div>
+                      </footer>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </div>
   )

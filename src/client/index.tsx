@@ -24,6 +24,8 @@ import { VisionBridgeCard } from './VisionBridgeCard.tsx'
 import { VisionBridgeCardController } from './vision-bridge-card-controller.ts'
 import { visionActivityDefinition } from './vision-activity-definition.ts'
 import { createVisionBridgeStore } from './store.ts'
+import { VideoClientController } from './video-client-controller.ts'
+import { VideoUploadButton, VideoUploadDock } from './VideoUploadButton.tsx'
 import { en, zh, type VisionBridgeKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -55,6 +57,7 @@ export function apply(ctx: ClientContext): void {
   // open/closed state. Passing the factory would give each entry its own
   // exclusive instance, so the toggle would flip a copy the panel never sees.
   const visionBridgeStore = createVisionBridgeStore()
+  const videoController = new VideoClientController()
 
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
@@ -62,8 +65,24 @@ export function apply(ctx: ClientContext): void {
     order: 100,
     locale: NS,
     store: visionBridgeStore,
-    inject: (): VisionBridgePanelInjected => ({ api }),
+    inject: (): VisionBridgePanelInjected => ({ api, videoController }),
   }, VisionBridgePanel))
+
+  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+    name: 'conversation.input.left',
+    id: 'vision-bridge-video-upload',
+    order: 100,
+    locale: NS,
+    inject: () => ({ videoController }),
+  }, VideoUploadButton))
+
+  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+    name: 'conversation.input.dock',
+    id: 'vision-bridge-video-progress',
+    order: 30,
+    locale: NS,
+    inject: () => ({ videoController }),
+  }, VideoUploadDock))
 
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
     name: 'tool.call.toolview',

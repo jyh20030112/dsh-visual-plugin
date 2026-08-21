@@ -15,6 +15,14 @@ import type { VisionBalanceResult, VisionTestResult } from '../vision.ts'
 import { createVisionBridgeStore } from './store.ts'
 import css from './VisionBridgeCard.module.css'
 
+interface VideoHealth {
+  available: boolean
+  ffmpeg?: { version: string }
+  ffprobe?: { version: string }
+  sceneDetect?: { version: string }
+  issues: Array<{ code: string; message: string }>
+}
+
 /** Composed props of the `settings.plugin.item` entry. */
 export type VisionBridgeCardProps =
   PropsRuntime<'settings.plugin.item'>
@@ -35,10 +43,12 @@ export function VisionBridgeCard(props: VisionBridgeCardProps): JSX.Element | nu
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<VisionTestResult | null>(null)
   const [balance, setBalance] = useState<VisionBalanceResult | null>(null)
+  const [videoHealth, setVideoHealth] = useState<VideoHealth | null>(null)
 
   useEffect(() => {
     if (!open) return
     void loadBalance()
+    void loadVideoHealth()
   }, [open])
 
   if (!state.available) return null
@@ -72,6 +82,16 @@ export function VisionBridgeCard(props: VisionBridgeCardProps): JSX.Element | nu
       setBalance(await response.json() as VisionBalanceResult)
     } catch {
       setBalance({ supported: false, error: { code: 'NETWORK', message: 'fetch failed' } })
+    }
+  }
+
+  /** Probe the required local FFmpeg/FFprobe/PySceneDetect toolchain. */
+  async function loadVideoHealth(): Promise<void> {
+    try {
+      const response = await fetch('/vision-bridge/videos/health')
+      setVideoHealth(await response.json() as VideoHealth)
+    } catch {
+      setVideoHealth({ available: false, issues: [{ code: 'health_unavailable', message: 'Health check failed.' }] })
     }
   }
 
@@ -114,6 +134,28 @@ export function VisionBridgeCard(props: VisionBridgeCardProps): JSX.Element | nu
                 <span className={css.toggleThumb} />
               </span>
             </button>
+          </div>
+
+          <div className={css.capability}>
+            <div className={css.capabilityHead}>
+              <span className={css.sidebarLabel}>{t('video.dependencies')}</span>
+              <button type="button" className={css.refreshButton} onClick={() => { void loadVideoHealth() }}>
+                {t('action.refresh')}
+              </button>
+            </div>
+            {videoHealth === null ? (
+              <p className={css.hint}>{t('video.dependenciesChecking')}</p>
+            ) : (
+              <>
+                <span className={videoHealth.available ? css.badge : css.badgeError}>
+                  {videoHealth.available ? t('video.dependenciesReady') : t('video.dependenciesMissing')}
+                </span>
+                <p className={css.hint}>
+                  FFmpeg {videoHealth.ffmpeg?.version ?? '—'} · FFprobe {videoHealth.ffprobe?.version ?? '—'} · PySceneDetect {videoHealth.sceneDetect?.version ?? '—'}
+                </p>
+                {videoHealth.issues.map(issue => <p key={issue.code} className={css.invalid}>{issue.message}</p>)}
+              </>
+            )}
           </div>
 
           <label className={css.field}>
